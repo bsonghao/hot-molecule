@@ -24,7 +24,7 @@ import opt_einsum as oe
 
 
 class vibronic_model_hamiltonian(object):
-    """ vibronic model hamiltonian class implement TF-VECC approach to simulation thermal properties of vibronic models """
+    """ vibronic model hamiltonian class implement TF-VECC approach to simulation thermal properties of vibronic models. """
 
     def __init__(self, freq, LCP, QCP, VE, num_mode):
         """ initialize hamiltonian parameters:
@@ -37,18 +37,25 @@ class vibronic_model_hamiltonian(object):
         self.N = num_mode
         # define Hamiltonian obrect as a python dictionary where the keys are the rank of the Hamiltonian
         # and we represent the Hamitlnian in the form of second quantization
-        self.Hamiltonian = dict()
+        self.H = dict()
         # constant
-        self.Hamilonian[(0, 0)] = VE + 0.5 * np.trace(VE)
+        self.H[(0, 0)] = VE + 0.5 * np.trace(QCP)
         # first order
-        self.Hamiltonian[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
-        self.Hamiltonian[(0, 1)] = LC_ / np.sqrt(2) * np.ones(self.N)
+        self.H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
+        self.H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N)
         # second order
-        self.Hamiltonian[(1, 1)] = np.diag(freq)
-        self.Hamiltonian[(1, 1)] += QCP
+        self.H[(1, 1)] = np.diag(freq)
+        self.H[(1, 1)] += QCP
 
-        self.Hamiltonian[(2, 0)] = QCP / 2
-        self.Hamittonian[(0, 2)] = QCP / 2
+        self.H[(2, 0)] = QCP / 2
+        self.H[(0, 2)] = QCP / 2
+
+        print("number of vibrational mode {:}".format(self.N))
+        print("##### Hamiltonian parameters ######")
+        for rank in self.H.keys():
+            print("Block {:}: \n {:}".format(rank, self.H[rank]))
+
+        print("### End of Hamiltonian parameters ####")
 
     def thermal_field_transformation(self, beta):
         """conduct Bogoliubov transformation of input Hamiltonian and determine thermal field reference state"""
