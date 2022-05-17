@@ -41,6 +41,10 @@ class vibronic_model_hamiltonian(object):
         self.LCP = LCP
         self.QCP = QCP
         self.VE = VE
+
+        # Boltzmann constant
+        self.Kb = 8.61733326e-5
+
         # define Hamiltonian obrect as a python dictionary where the keys are the rank of the Hamiltonian
         # and we represent the Hamitlnian in the form of second quantization
         self.H = dict()
@@ -61,10 +65,14 @@ class vibronic_model_hamiltonian(object):
         for rank in self.H.keys():
             print("Block {:}: \n {:}".format(rank, self.H[rank]))
 
+        print("Boltzmann constant: {:} eV K-1".format(self.Kb))
+
         print("### End of Hamiltonian parameters ####")
 
-    def thermal_field_transformation(self, beta):
+    def thermal_field_transformation(self, Temp):
         """conduct Bogoliubov transformation of input Hamiltonian and determine thermal field reference state"""
+        # calculate inverse temperature
+        beta = 1. / (self.Kb * Temp)
         # define Bogliubov transformation based on Bose-Einstein statistics
         self.cosh_theta = 1. / np.sqrt((np.ones(self.N) - np.exp(-beta * self.Freq)))
         self.sinh_theta = np.exp(-beta * self.Freq / 2.) / np.sqrt(np.ones(self.N) - np.exp(-beta * self.Freq))
@@ -73,7 +81,7 @@ class vibronic_model_hamiltonian(object):
         self.H_tilde = dict()
 
         # constant term???
-        self.H_tilde[(0, 0)] = self.H[(0, 0)]
+        self.H_tilde[(0, 0)] = self.H[(0, 0)] + sum(self.sinh_theta**2)
 
         # linear terns
         self.H_tilde[(1, 0)] = {
@@ -107,6 +115,14 @@ class vibronic_model_hamiltonian(object):
                                 "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(2, 0)])
                                }
+
+        print("###### Bogliubov transformed Hamiltonian ########")
+        for rank in self.H_tilde.keys():
+            if rank == (0, 0):
+                print("Rank:{:}\n{:}".format(rank, self.H_tilde[rank]))
+            else:
+                for block in self.H_tilde[rank].keys():
+                    print("Rank:{:} Block:{:}\n{:}".format(rank, block, self.H_tilde[rank][block]))
 
         return
 

@@ -40,6 +40,7 @@ def main():
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, num_mode)
+    model.thermal_field_transformation(Temp=300.)
 
     return
 
