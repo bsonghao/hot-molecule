@@ -128,11 +128,157 @@ class vibronic_model_hamiltonian(object):
 
     def map_initial_T_amplitude(self):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
+
+    def reduce_H_tilde(self):
+        """merge the a, b blocks of the Bogliubov transformed Hamiltonian into on tensor"""
+        N = self.N
+        # initialize
+        self.H_tilde_reduce = {
+            (0, 0): self.H_tilde[(0, 0)],
+            }
+
+        def merge_linear(input_tensor):
+            """ merge linear terms of the Hamiltonian """
+            output_tensor = np.zeros(2 * N)
+            output_tensor[:N] = input_tensor['a'].copy()
+            output_tensor[N:] = input_tensor['b'].copy()
+
+            return output_tensor
+
+        def merge_quadratic(input_tensor):
+            """ merge quadratic_terms of the Hamiltonian """
+            output_tensor = np.zeros([2 * N, 2 * N])
+            output_tensor[:N, :N] = input_tensor["aa"].copy()
+            output_tensor[:N, N:] = input_tensor["ab"].copy()
+            output_tensor[N:, :N] = input_tensor["ba"].copy()
+            output_tensor[N:, N:] = input_tensor["bb"].copy()
+
+            return output_tensor
+
+        # merge linear terms
+        self.H_tilde_reduce[(1, 0)] = merge_linear(self.H_tilde[(1, 0)])
+        self.H_tilde_reduce[(0, 1)] = merge_linear(self.H_tilde[(0, 1)])
+        self.H_tilde_reduce[(1, 1)] = merge_quadratic(self.H_tilde[(1, 1)])
+        self.H_tilde_reduce[(2, 0)] = merge_quadratic(self.H_tilde[(2, 0)])
+        self.H_tilde_reduce[(0, 2)] = merge_quadratic(self.H_tilde[(0, 2)])
+
+        print("##### Bogliubov transformed (fictitous) Hamiltonian after merge blocks ######")
+        for rank in self.H_tilde_reduce.keys():
+            print("Block {:}: \n {:}".format(rank, self.H_tilde_reduce[rank]))
+
         return
 
-    def CC_residue(self):
+
+    def CC_residue(self, H_args, T_args):
         """implement coupled cluster residue equations"""
-        return
+        N = self.N
+
+        def f_t_0(H, T):
+            """return residue R_0"""
+
+            # initialize as zero
+            R = 0.
+
+            # constant
+            R += H[(0, 0)]
+
+            # linear
+            R += np.einsum('k,k->', H[(0, 1)], T[1])
+
+            # quadratic
+            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[2])
+            R += 0.5 * np.einsum('kl,k,l->', H[(0, 2)], T[1], T[1])
+
+            return R
+
+        def f_t_I(H, T):
+            """return residue R_I"""
+
+            # initialize as zero
+            R = np.zeros(N)
+
+            # linear
+            R += H[(0, 1)]
+
+            # quadratic
+            R += np.einsum('ik,k->i', H[(0, 2)], T[1])
+
+            return R
+
+        def f_t_i(H, T):
+            """return residue R_i"""
+
+            # initialize
+            R = np.zeros(N)
+
+            # non zero initial value of R
+            R += H[(1, 0)]
+
+            # linear
+            R += np.einsum('ki,k->i', H[(1, 1)], T[1])
+
+            # quadratic
+            R += np.einsum('k,ki->i', H[(0, 1)], T[2])
+            R += np.einsum('kl,k,li->i', H[(0, 2)], T[1], T[2])
+
+            return R
+
+        def f_t_Ij(H, T):
+            """return residue R_Ij"""
+
+            # initialize
+            R = np.zeros([N, N])
+
+            # first term
+            R += H[(1, 1)]
+
+            # quadratic
+            R += np.einsum('ik,kj->ij', H[(0, 2)], T[2])
+
+            return R
+
+        def f_t_IJ(H, T):
+            """return residue R_IJ"""
+
+            # initialize as zero
+            R = np.zeros([N, N])
+
+            # quadratic
+            R += H[(0, 2)]
+            return R
+
+        def f_t_ij(H, T):
+            """return residue R_ij"""
+
+            # # initialize as zero
+            R = np.zeros([N, N])
+
+            # if self.hamiltonian_truncation_order >= 2:
+
+            # quadratic
+            R += H[(2, 0)]  # h term
+            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
+            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
+            R += 0.5 * np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2], T[2])
+            R += 0.5 * np.einsum('kl,kj,li->ij', H[(0, 2)], T[2], T[2])
+            return R
+
+        # compute similarity transformed Hamiltonian over e^T
+        # sim_h = {}
+        # sim_h[(0, 0)] = f_t_0(H_args, t_args)
+        # sim_h[(0, 1)] = f_t_I(H_args, t_args)
+        # sim_h[(1, 0)] = f_t_i(H_args, t_args)
+        # sim_h[(1, 1)] = f_t_Ij(H_args, t_args)
+        # sim_h[(0, 2)] = f_t_IJ(H_args, t_args)
+        # sim_h[(2, 0)] = f_t_ij(H_args, t_args)
+
+        residue = dict()
+
+        residue[0] = f_t_0(H_args, T_args)
+        residue[1] = f_t_i(H_args, T_args)
+        residue[2] = f_t_ij(H_args, T_args)
+
+        return residue
 
     def TFCC_integration(self):
         """conduct TFCC imaginary time integration to calculation thermal perperties"""
