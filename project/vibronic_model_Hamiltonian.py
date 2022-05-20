@@ -126,8 +126,17 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def map_initial_T_amplitude(self):
+    def _map_initial_T_amplitude(self, T_initial):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
+        beta_initial = 1. / (self.Kb * T_initial)
+
+        # calculate two particle density matrice from Bose-Einstein statistics
+        two_RDM = np.diag(np.exp(beta_initial * self.Freq))
+
+        # question: how to map t_1 (a , b block)??
+
+
+        return initial_T_amplitude
 
     def reduce_H_tilde(self):
         """merge the a, b blocks of the Bogliubov transformed Hamiltonian into on tensor"""
