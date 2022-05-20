@@ -42,7 +42,7 @@ class vibronic_model_hamiltonian(object):
         self.QCP = QCP
         self.VE = VE
 
-        # Boltzmann constant
+        # Boltzmann constant (eV K-1)
         self.Kb = 8.61733326e-5
 
         # define Hamiltonian obrect as a python dictionary where the keys are the rank of the Hamiltonian
@@ -128,13 +128,35 @@ class vibronic_model_hamiltonian(object):
 
     def _map_initial_T_amplitude(self, T_initial):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
-        beta_initial = 1. / (self.Kb * T_initial)
+        def map_t1_amplitude():
+            """map t_1 amplitude from linear coupling constant"""
+            # initialize t1 amplitude
+            t_1 = np.zeros(2 * N)
+            t_1[:N] += self.LCP / np.sqrt(2) / (2 * self.cosh_theta)
+            t_1[N:] += self.LCP / np.sqrt(2) / (2 * self.sinh_theta)
 
+            return t_1
+
+        def map_t2_amplitude(RDM_2, t1):
+            """map t_2 amplitude from cumulant expression of 2-RDM"""
+            # initialize t2 amplitude
+            t_2 = np.zeros([2 * N, 2 * N])
+            t_2[N:, N:] += RDM_2
+            t_2 -= np.einsum('p,q->pq', t1, t1)
+
+            return t_2
+
+        N = self.N
+        beta_initial = 1. / (self.Kb * T_initial)
         # calculate two particle density matrice from Bose-Einstein statistics
         two_RDM = np.diag(np.exp(beta_initial * self.Freq))
 
-        # question: how to map t_1 (a , b block)??
+        initial_T_amplitude = {}
+        initial_T_amplitude["t1"] = map_t1_amplitude()
+        initial_T_amplitude["t2"] = map_t2_amplitude(two_RDM, initial_T_amplitude['t1'])
 
+        print("initial single T amplitude:\n{:}".format(initial_T_amplitude["t1"]))
+        print("initial double T amplitude:\n{:}".format(initial_T_amplitude["t2"]))
 
         return initial_T_amplitude
 

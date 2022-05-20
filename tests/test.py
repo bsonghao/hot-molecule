@@ -40,8 +40,9 @@ def main():
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, num_mode)
-    model.thermal_field_transformation(Temp=300.)
+    model.thermal_field_transformation(Temp=10000.)
     model.reduce_H_tilde()
+    model._map_initial_T_amplitude(T_initial=1000.)
 
     return
 
