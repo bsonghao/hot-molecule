@@ -335,17 +335,17 @@ class vibronic_model_hamiltonian(object):
         ACF = np.zeros(num_steps+1, dtype=complex)
         # initialize T amplitude as zeros
         T_amplitude = {
-                   0: 1.,
+                   0: 0.,
                    1: np.zeros(self.N, dtype=complex),
                    2: np.zeros([self.N, self.N], dtype=complex)
         }
         for i in range(num_steps+1):
             # calculate ACF
-            ACF[i] = T_amplitude[0]
+            ACF[i] = np.exp(T_amplitude[0])
             # calculate CC residue
             residue = self.CC_residue(self.H, T_amplitude)
             # update T amplitude
-            T_amplitude[0] -= dtau * residue[0] * T_amplitude[0]* 1j
+            T_amplitude[0] -= dtau * residue[0] * 1j
             T_amplitude[1] -= dtau * residue[1] * 1j
             T_amplitude[2] -= dtau * residue[2] * 1j
 
