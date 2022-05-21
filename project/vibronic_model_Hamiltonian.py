@@ -80,7 +80,7 @@ class vibronic_model_hamiltonian(object):
         print("Boltzmann constant: {:} eV K-1".format(self.Kb))
 
         # initialize Hamiltonian in FCI basis
-        model = model_two_mode(self.H[(0, 0)],self.H[(1, 0)], self.H[(1, 1)], self.H[(0, 2)])
+        model = model_two_mode(self.H[(0, 0)], self.H[(1, 0)], self.H[(1, 1)], self.H[(0, 2)])
         self.H_FCI = model.sos_solution(basis_size=40)
 
         print("### End of Hamiltonian parameters ####")
@@ -233,8 +233,8 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('k,k->', H[(0, 1)], T[1])
 
             # quadratic
-            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[2])
-            R += 0.5 * np.einsum('kl,k,l->', H[(0, 2)], T[1], T[1])
+            R += 0.5 * np.einsum('kl,kl->', H[(2, 0)], T[2])
+            R += 0.5 * np.einsum('kl,k,l->', H[(2, 0)], T[1], T[1])
 
             return R
 
@@ -262,7 +262,7 @@ class vibronic_model_hamiltonian(object):
             R += H[(1, 0)]
 
             # linear
-            R += np.einsum('ki,k->i', H[(1, 1)], T[1])
+            R += np.einsum('ik,k->i', H[(1, 1)], T[1])
 
             # quadratic
             R += np.einsum('k,ki->i', H[(0, 1)], T[2])
@@ -304,8 +304,8 @@ class vibronic_model_hamiltonian(object):
 
             # quadratic
             R += H[(2, 0)]  # h term
-            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
-            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
+            R += np.einsum('jk,ki->ij', H[(1, 1)], T[2])
+            R += np.einsum('ik,kj->ij', H[(1, 1)], T[2])
             R += 0.5 * np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2], T[2])
             R += 0.5 * np.einsum('kl,kj,li->ij', H[(0, 2)], T[2], T[2])
             return R
@@ -335,17 +335,17 @@ class vibronic_model_hamiltonian(object):
         ACF = np.zeros(num_steps+1, dtype=complex)
         # initialize T amplitude as zeros
         T_amplitude = {
-                   0: 0.,
+                   0: 1.,
                    1: np.zeros(self.N, dtype=complex),
                    2: np.zeros([self.N, self.N], dtype=complex)
         }
         for i in range(num_steps+1):
             # calculate ACF
-            ACF[i] = np.exp(T_amplitude[0])
+            ACF[i] = T_amplitude[0]
             # calculate CC residue
             residue = self.CC_residue(self.H, T_amplitude)
             # update T amplitude
-            T_amplitude[0] -= dtau * residue[0] * 1j
+            T_amplitude[0] -= dtau * residue[0] * T_amplitude[0]* 1j
             T_amplitude[1] -= dtau * residue[1] * 1j
             T_amplitude[2] -= dtau * residue[2] * 1j
 
@@ -367,8 +367,11 @@ class vibronic_model_hamiltonian(object):
         # initilize auto correlation function
         ACF = np.zeros_like(time, dtype=complex)
         # compute ACF
-        for n in range(self.N**2):
+        for n in range(40**self.N):
             ACF += V[(0, n)] * np.exp(-E[n] * time * 1j) * V[(0, n)].conjugate()
+
+        # normalize ACF
+        ACF /= ACF[0]
 
         print('### End of Sum Over States Program ###')
         return time, ACF
