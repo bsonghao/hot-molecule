@@ -6,10 +6,15 @@ Some explanation / notes should go here
 
 
 # system imports
+# system imports
+import io
+import time
 import os
-from os.path import join
-import itertools as it
-import types
+from os.path import abspath, join, dirname, basename
+import sys
+import cProfile
+import pstats
+
 
 # third party imports
 import scipy
@@ -19,8 +24,15 @@ import numpy as np
 import matplotlib as mpl; mpl.use('pdf')
 import matplotlib.pyplot as plt
 import parse  # used for loading data files
+import pandas as pd
 #
 import opt_einsum as oe
+
+# local imports
+# import the path to the package
+project_dir = abspath(join(dirname(__file__), '/home/paulie/hot-molecule'))
+sys.path.insert(0, project_dir)
+from project.two_mode_model import model_two_mode
 
 
 class vibronic_model_hamiltonian(object):
@@ -66,6 +78,10 @@ class vibronic_model_hamiltonian(object):
             print("Block {:}: \n {:}".format(rank, self.H[rank]))
 
         print("Boltzmann constant: {:} eV K-1".format(self.Kb))
+
+        # initialize Hamiltonian in FCI basis
+        model = model_two_mode(self.H[(0, 0)],self.H[(1, 0)], self.H[(1, 1)], self.H[(0, 2)])
+        self.H_FCI = model.sos_solution(basis_size=40)
 
         print("### End of Hamiltonian parameters ####")
 
@@ -240,7 +256,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_i"""
 
             # initialize
-            R = np.zeros(N)
+            R = np.zeros(N, dtype=complex)
 
             # non zero initial value of R
             R += H[(1, 0)]
@@ -282,7 +298,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_ij"""
 
             # # initialize as zero
-            R = np.zeros([N, N])
+            R = np.zeros([N, N], dtype=complex)
 
             # if self.hamiltonian_truncation_order >= 2:
 
@@ -310,6 +326,72 @@ class vibronic_model_hamiltonian(object):
         residue[2] = f_t_ij(H_args, T_args)
 
         return residue
+
+    def VECC_integration(self, t_final, num_steps):
+        """ conduct VECC integration """
+        dtau = t_final / num_steps
+        # initialize auto-correlation function as an array
+        time = np.linspace(0., t_final, num_steps+1)
+        ACF = np.zeros(num_steps+1, dtype=complex)
+        # initialize T amplitude as zeros
+        T_amplitude = {
+                   0: 0.,
+                   1: np.zeros(self.N, dtype=complex),
+                   2: np.zeros([self.N, self.N], dtype=complex)
+        }
+        for i in range(num_steps+1):
+            # calculate ACF
+            ACF[i] = np.exp(T_amplitude[0])
+            # calculate CC residue
+            residue = self.CC_residue(self.H, T_amplitude)
+            # update T amplitude
+            T_amplitude[0] -= dtau * residue[0] * 1j
+            T_amplitude[1] -= dtau * residue[1] * 1j
+            T_amplitude[2] -= dtau * residue[2] * 1j
+
+            print("time:{:} ACF:{:}".format(time[i], ACF[i]))
+
+        return time, ACF
+
+    def FCI_solution(self, time):
+        """ calculate ACF from exact diagonalization of the full Hamiltonian """
+        print('### FCI program start ###')
+        # check hermicity of Hamitlnian
+        assert np.allclose(self.H_FCI, self.H_FCI.transpose())
+        # diagonalize the full Hamiltonian
+        E, V = np.linalg.eigh(self.H_FCI)
+        print('Energy Eigenvalue')
+        for i in range(10):
+            print(E[i])
+
+        # initilize auto correlation function
+        ACF = np.zeros_like(time, dtype=complex)
+        # compute ACF
+        for n in range(self.N**2):
+            ACF += V[(0, n)] * np.exp(-E[n] * time * 1j) * V[(0, n)].conjugate()
+
+        print('### End of Sum Over States Program ###')
+        return time, ACF
+
+    def store_ACF_data(self, time, ACF, name):
+        """ store ACF data in a format that adapt with autospec """
+        data = {'time': time, 'Re': ACF.real, 'Im': ACF.imag, 'Abs': abs(ACF)}
+        df = pd.DataFrame(data)
+
+        # store ACF data to csv format
+        df.to_csv(name+".csv", index=False)
+
+        # store ACF data in autospec format
+        with open(name+".txt", 'w') as file:
+            file.write('#    time[fs]         Re(autocorrel)     Im(autocorrel)     Abs(autocorrel)\n')
+            tmp = df.to_records(index=False)
+            for t, Re, Im, Abs in tmp:
+                x1 = '{:.{}f}'.format(t, 8)
+                x2, x3, x4 = ['{:.{}f}'.format(e, 14) for e in (Re, Im, Abs)]
+                string = '{:>15} {:>22} {:>18} {:>18}'.format(x1, x2, x3, x4)
+                file.write(string+'\n')
+        return
+
 
     def TFCC_integration(self):
         """conduct TFCC imaginary time integration to calculation thermal perperties"""
