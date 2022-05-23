@@ -216,25 +216,30 @@ class vibronic_model_hamiltonian(object):
         return
 
 
-    def CC_residue(self, H_args, T_args):
+    def CC_residue(self, H_args, T_args, Z_args=None, CI_flag=False, mix_flag=False, proj_flag=False):
         """implement coupled cluster residue equations"""
         N = self.N
 
-        def f_t_0(H, T):
+        def f_t_0(H, T, CI_flag=CI_flag):
             """return residue R_0"""
 
             # initialize as zero
             R = 0.
 
             # constant
-            R += H[(0, 0)]
+            if not CI_flag:
+                R += H[(0, 0)]
+            else:
+                R += H[(0, 0)] * T[0]
 
             # linear
             R += np.einsum('k,k->', H[(0, 1)], T[1])
 
             # quadratic
-            R += 0.5 * np.einsum('kl,kl->', H[(2, 0)], T[2])
-            R += 0.5 * np.einsum('kl,k,l->', H[(2, 0)], T[1], T[1])
+            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[2])
+
+            if not CI_flag:
+                R += 0.5 * np.einsum('kl,k,l->', H[(0, 2)], T[1], T[1])
 
             return R
 
@@ -242,7 +247,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_I"""
 
             # initialize as zero
-            R = np.zeros(N)
+            R = np.zeros(N, dtype=complex)
 
             # linear
             R += H[(0, 1)]
@@ -252,21 +257,26 @@ class vibronic_model_hamiltonian(object):
 
             return R
 
-        def f_t_i(H, T):
+        def f_t_i(H, T, CI_flag=CI_flag):
             """return residue R_i"""
 
             # initialize
             R = np.zeros(N, dtype=complex)
 
             # non zero initial value of R
-            R += H[(1, 0)]
+            if not CI_flag:
+                R += H[(1, 0)]
+            else:
+                R += H[(1, 0)] * T[0]
+
 
             # linear
             R += np.einsum('ik,k->i', H[(1, 1)], T[1])
 
             # quadratic
             R += np.einsum('k,ki->i', H[(0, 1)], T[2])
-            R += np.einsum('kl,k,li->i', H[(0, 2)], T[1], T[2])
+            if not CI_flag:
+                R += np.einsum('kl,k,li->i', H[(0, 2)], T[1], T[2])
 
             return R
 
@@ -274,7 +284,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_Ij"""
 
             # initialize
-            R = np.zeros([N, N])
+            R = np.zeros([N, N], dtype=complex)
 
             # first term
             R += H[(1, 1)]
@@ -288,13 +298,14 @@ class vibronic_model_hamiltonian(object):
             """return residue R_IJ"""
 
             # initialize as zero
-            R = np.zeros([N, N])
+            R = np.zeros([N, N], dtype=complex)
 
             # quadratic
             R += H[(0, 2)]
+
             return R
 
-        def f_t_ij(H, T):
+        def f_t_ij(H, T, CI_flag=CI_flag):
             """return residue R_ij"""
 
             # # initialize as zero
@@ -303,53 +314,112 @@ class vibronic_model_hamiltonian(object):
             # if self.hamiltonian_truncation_order >= 2:
 
             # quadratic
-            R += H[(2, 0)]  # h term
-            R += np.einsum('jk,ki->ij', H[(1, 1)], T[2])
-            R += np.einsum('ik,kj->ij', H[(1, 1)], T[2])
-            R += 0.5 * np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2], T[2])
-            R += 0.5 * np.einsum('kl,kj,li->ij', H[(0, 2)], T[2], T[2])
+            if not CI_flag:
+                R += H[(2, 0)]  # h term
+            else:
+                R += H[(2, 0)] * T[0]
+                R += H[(0, 0)] * T[2]
+
+            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
+            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
+            if not CI_flag:
+                R += 0.5 * np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2], T[2])
+                R += 0.5 * np.einsum('kl,kj,li->ij', H[(0, 2)], T[2], T[2])
             return R
 
-        # compute similarity transformed Hamiltonian over e^T
-        # sim_h = {}
-        # sim_h[(0, 0)] = f_t_0(H_args, t_args)
-        # sim_h[(0, 1)] = f_t_I(H_args, t_args)
-        # sim_h[(1, 0)] = f_t_i(H_args, t_args)
-        # sim_h[(1, 1)] = f_t_Ij(H_args, t_args)
-        # sim_h[(0, 2)] = f_t_IJ(H_args, t_args)
-        # sim_h[(2, 0)] = f_t_ij(H_args, t_args)
+        if not mix_flag:
+            residue = dict()
 
-        residue = dict()
+            residue[0] = f_t_0(H_args, T_args)
+            residue[1] = f_t_i(H_args, T_args)
+            residue[2] = f_t_ij(H_args, T_args)
 
-        residue[0] = f_t_0(H_args, T_args)
-        residue[1] = f_t_i(H_args, T_args)
-        residue[2] = f_t_ij(H_args, T_args)
+            return residue
+        else:
+            # similarity transform the Hamiltonian
+            sim_h = {}
+            sim_h[(0, 0)] = f_t_0(H_args, T_args)
+            sim_h[(0, 1)] = f_t_I(H_args, T_args)
+            sim_h[(1, 0)] = f_t_i(H_args, T_args)
+            sim_h[(1, 1)] = f_t_Ij(H_args, T_args)
+            sim_h[(0, 2)] = f_t_IJ(H_args, T_args)
+            sim_h[(2, 0)] = f_t_ij(H_args, T_args)
 
-        return residue
+            # equate t_1 residue to (1, 0) block of the similairty transformed Hamiltonian
+            t_residue = sim_h[(1, 0)].copy()
 
-    def VECC_integration(self, t_final, num_steps):
+            # calculate net residue based on similairty transformed Hamiltnoian
+            net_R_0 = f_t_0(sim_h, Z_args, CI_flag=True)
+            net_R_1 = f_t_i(sim_h, Z_args, CI_flag=True)
+            net_R_2 = f_t_ij(sim_h, Z_args, CI_flag=True)
+
+            z_residue = {}
+            z_residue[0] = net_R_0
+
+            z_residue[1] = net_R_1
+            z_residue[1] -= t_residue * Z_args[0]
+
+            z_residue[2] = net_R_2
+            z_residue[2] -= np.einsum('i,j->ij', t_residue, Z_args[1])
+            z_residue[2] -= np.einsum('j,i->ij', t_residue, Z_args[1])
+
+            return t_residue, z_residue
+
+
+    def VECC_integration(self, t_final, num_steps, CI_flag=False, mix_flag=False):
         """ conduct VECC integration """
         dtau = t_final / num_steps
         # initialize auto-correlation function as an array
         time = np.linspace(0., t_final, num_steps+1)
         ACF = np.zeros(num_steps+1, dtype=complex)
-        # initialize T amplitude as zeros
-        T_amplitude = {
-                   0: 0.,
-                   1: np.zeros(self.N, dtype=complex),
-                   2: np.zeros([self.N, self.N], dtype=complex)
-        }
-        for i in range(num_steps+1):
-            # calculate ACF
-            ACF[i] = np.exp(T_amplitude[0])
-            # calculate CC residue
-            residue = self.CC_residue(self.H, T_amplitude)
-            # update T amplitude
-            T_amplitude[0] -= dtau * residue[0] * 1j
-            T_amplitude[1] -= dtau * residue[1] * 1j
-            T_amplitude[2] -= dtau * residue[2] * 1j
+        if not mix_flag:
+            # initialize T amplitude as zeros
+            T_amplitude = {
+                       0: 0.,
+                       1: np.zeros(self.N, dtype=complex),
+                       2: np.zeros([self.N, self.N], dtype=complex)
+            }
 
-            print("time:{:} ACF:{:}".format(time[i], ACF[i]))
+            if CI_flag:
+                T_amplitude[0] = 1.
+            for i in range(num_steps+1):
+                # calculate ACF
+                if CI_flag:
+                    ACF[i] = T_amplitude[0]
+                else:
+                    ACF[i] = np.exp(T_amplitude[0])
+            # calculate CC residue
+                residue = self.CC_residue(self.H, T_amplitude, CI_flag=CI_flag)
+                # update T amplitude
+                T_amplitude[0] -= dtau * residue[0] * 1j
+                T_amplitude[1] -= dtau * residue[1] * 1j
+                T_amplitude[2] -= dtau * residue[2] * 1j
+
+                print("time:{:} ACF:{:}".format(time[i], ACF[i]))
+
+        else:
+            T_amplitude = {
+                       0: 0.,
+                       1: np.zeros(self.N, dtype=complex),
+                       2: np.zeros([self.N, self.N], dtype=complex)
+            }
+            Z_amplitude = {
+                       0: 1.,
+                       1: np.zeros(self.N, dtype=complex),
+                       2: np.zeros([self.N, self.N], dtype=complex)
+            }
+            for i in range(num_steps+1):
+                # calculate ACF
+                ACF[i] = Z_amplitude[0]
+                # calculate CC residue
+                t_residue, z_residue = self.CC_residue(self.H, T_amplitude, Z_amplitude, CI_flag=CI_flag, mix_flag=mix_flag)
+                # update T amplitude
+                T_amplitude[1] -= dtau * t_residue * 1j
+                # update Z amplitude
+                Z_amplitude[0] -= dtau * z_residue[0] * 1j
+                Z_amplitude[1] -= dtau * z_residue[1] * 1j
+                Z_amplitude[2] -= dtau * z_residue[2] * 1j
+                print("time:{:} ACF:{:}".format(time[i], ACF[i]))
 
         return time, ACF
 
