@@ -268,6 +268,7 @@ class vibronic_model_hamiltonian(object):
                 R += H[(1, 0)]
             else:
                 R += H[(1, 0)] * T[0]
+                R += H[(0, 0)] * T[1]
 
 
             # linear
@@ -319,6 +320,8 @@ class vibronic_model_hamiltonian(object):
             else:
                 R += H[(2, 0)] * T[0]
                 R += H[(0, 0)] * T[2]
+                R += np.einsum('i,j->ij', H[(1, 0)], T[1])
+                R += np.einsum('j,i->ij', H[(1, 0)], T[1])
 
             R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
             R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])

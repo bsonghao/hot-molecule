@@ -32,7 +32,7 @@ def main():
 
     # quadratic coupling constant
     QCP = np.array([[0.030, 0.001],
-                    [0.001, 0.040]]) 
+                    [0.001, 0.040]])
 
     # frequancies (in eV)
     Freq = np.array([0.15, 0.20])
@@ -47,8 +47,8 @@ def main():
     # store ACF data of FCI calculation
     # model.store_ACF_data(time_FCI, ACF_FCI, name="ACF_single_surface_model_FCI")
     # run VECC calculation of ACF
-    time_CC, ACF_CC = model.VECC_integration(t_final=100, num_steps=10000, CI_flag=False, mix_flag=True)
-    model.store_ACF_data(time_CC, ACF_CC, name="ACF_single_surface_model_mix_CC_CI")
+    time_CC, ACF_CC = model.VECC_integration(t_final=100, num_steps=10000, CI_flag=True, mix_flag=False)
+    model.store_ACF_data(time_CC, ACF_CC, name="ACF_single_surface_model_VECI")
 
     return
 
