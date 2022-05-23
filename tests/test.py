@@ -47,8 +47,8 @@ def main():
     # store ACF data of FCI calculation
     # model.store_ACF_data(time_FCI, ACF_FCI, name="ACF_single_surface_model_FCI")
     # run VECC calculation of ACF
-    time_CC, ACF_CC = model.VECC_integration(t_final=100, num_steps=10000, CI_flag=True, mix_flag=False)
-    model.store_ACF_data(time_CC, ACF_CC, name="ACF_single_surface_model_VECI")
+    time_CC, ACF_CC = model.VECC_integration(t_final=100, num_steps=10000, CI_flag=False, mix_flag=True, proj_flag=True)
+    model.store_ACF_data(time_CC, ACF_CC, name="ACF_single_surface_model_mix_CC_CI_proj")
 
     return
 
