@@ -387,14 +387,20 @@ class vibronic_model_hamiltonian(object):
 
             if proj_flag:
                 R += np.einsum('i, z, iy -> zy', T_proj, H[(1, 0)], T[2])
-                R += (1 / 2) * np.einsum('i, i, zy -> zy', T_proj, H[(1, 0)], T[2])
+                R += np.einsum('i, y, iz -> zy', T_proj, H[(1, 0)], T[2])
+
+                R += np.einsum('i, i, zy -> zy', T_proj, H[(1, 0)], T[2])
 
                 R += np.einsum('i, iz, y -> zy', T_proj, H[(2, 0)], T[1])
-                R += (1 / 2) * np.einsum('i, zy, i -> zy', T_proj, H[(2, 0)], T[1])
+                R += np.einsum('i, iy, z -> zy', T_proj, H[(2, 0)], T[1])
+
+                R += np.einsum('i, zy, i -> zy', T_proj, H[(2, 0)], T[1])
 
                 R += np.einsum('i, j, jz, iy -> zy', T_proj, T_proj, H[(2, 0)], T[2])
+                R += np.einsum('i, j, jy, iz -> zy', T_proj, T_proj, H[(2, 0)], T[2])
 
-                R += (1 / 4) * (
+
+                R += (1 / 2) * (
                         np.einsum('i, j, zy, ij -> zy', T_proj, T_proj, H[(2, 0)], T[2]) +
                         np.einsum('i, j, ij, zy -> zy', T_proj, T_proj, H[(2, 0)], T[2])
                     )
@@ -436,8 +442,10 @@ class vibronic_model_hamiltonian(object):
             z_residue[2] -= np.einsum('j,i->ij', t_residue, Z_args[1])
             if proj_flag:
                 X = np.einsum('k,k->', T_proj, t_residue)
-                z_residue[2] -= 0.5 * (X * Z_args[2])
+                z_residue[2] -= X * Z_args[2]
                 z_residue[2] -= np.einsum('k,i,kj->ij', T_proj, t_residue, Z_args[2])
+                z_residue[2] -= np.einsum('k,j,ki->ij', T_proj, t_residue, Z_args[2])
+
 
             # single Z residue
             z_residue[1] = net_R_1
