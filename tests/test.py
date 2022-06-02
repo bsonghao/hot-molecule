@@ -24,31 +24,38 @@ def main():
     # define number of vibrational model
     num_mode = 2
 
-    # constant term (in eV)
-    VE = 1.3
+    num_surface = 2
 
+    # constant term (in eV)
+    VE = np.zeros([num_surface, num_surface])
+    VE[0, 0] = 0.6
+    VE[1, 1] = 3.1
     # linear coupling constant (in eV)
-    LCP = np.array([0.32, 0.41])
+    LCP = np.zeros([num_surface, num_surface, num_mode])
+    LCP[0, 0, :] = np.array([0.28, 0.61]) / 2
+    LCP[0, 1, :] = np.array([0.18, 0.38]) / 2
+    LCP[1, 0, :] = np.array([0.18, 0.38]) / 2
+    LCP[1, 1, :] = np.array([0.34, 0.39]) / 2
 
     # quadratic coupling constant
-    QCP = np.array([[0.030, 0.001],
-                    [0.001, 0.040]])
+    QCP = np.zeros([num_surface, num_surface, num_mode, num_mode])
+    QCP[0, 0, :] = np.array([[0.007341, 0.0004], [0.0004, 0.008899]])*0
+    QCP[0, 1, :] = np.array([[0.001867, 0.0005], [0.0005, 0.006013]])*0
+    QCP[1, 0, :] = np.array([[0.001867, 0.0005], [0.0005, 0.006013]])*0
+    QCP[1, 1, :] = np.array([[0.002257, 0.0001], [0.0001, 0.007940]])*0
 
     # frequancies (in eV)
-    Freq = np.array([0.15, 0.20])
+    Freq = np.array([0.21, 0.43])
+
+    # transition dipole moment
+    TDM = np.array([0.1, 0.1])
 
     # initialize the Hamiltonian
-    model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, num_mode)
-    # model.thermal_field_transformation(Temp=10000.)
-    # model.reduce_H_tilde()
-    # model._map_initial_T_amplitude(T_initial=1000.)
-    # run FCI calculation of ACF
-    # time_FCI, ACF_FCI = model.FCI_solution(time=np.linspace(0, 100, 10001))
-    # store ACF data of FCI calculation
-    # model.store_ACF_data(time_FCI, ACF_FCI, name="ACF_single_surface_model_FCI")
-    # run VECC calculation of ACF
-    time_CC, ACF_CC = model.VECC_integration(t_final=100, num_steps=10000, CI_flag=False, mix_flag=True, proj_flag=True)
-    model.store_ACF_data(time_CC, ACF_CC, name="ACF_single_surface_model_mix_CC_CI_proj")
+    model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, TDM, num_mode, num_surface)
+    model.construct_full_Hamiltonian_in_HO_basis(basis_size=10)
+    model.calculate_state_pop_from_FCI(time=np.linspace(0,100,10000), basis_size=10)
+    # model.calculate_ACF_from_FCI(time=np.linspace(0,100,10001), basis_size=40, name="FCI_ACF")
+
 
     return
 
