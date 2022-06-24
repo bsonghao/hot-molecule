@@ -19,6 +19,7 @@ import numpy as np
 import matplotlib as mpl; mpl.use('pdf')
 import matplotlib.pyplot as plt
 import parse  # used for loading data files
+import pandas as pd
 #
 import opt_einsum as oe
 
@@ -69,9 +70,93 @@ class vibronic_model_hamiltonian(object):
 
         print("### End of Hamiltonian parameters ####")
 
+    def sum_over_states(self, basis_size=40, T_grid=np.linspace(100, 1000, 10000)):
+        """calculation thermal properties through sum over states"""
+        def construct_full_Hamitonian():
+            """construct full Hamiltonian in H.O. basis"""
+            Hamiltonian = np.zeros((basis_size, basis_size, basis_size, basis_size))
+            for a_1 in range(basis_size):
+                for a_2 in range(basis_size):
+                    for b_1 in range(basis_size):
+                        for b_2 in range(basis_size):
+                            if a_1 == b_1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 0)]
+                                Hamiltonian[a_1, a_2, b_1, b_2] += self.H[(1, 1)][0, 0]*(b_1)+self.H[(1, 1)][1, 1]*(b_2)
+                            if a_1 == b_1+1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 1)][0, 1]*np.sqrt(b_1+1)*np.sqrt(b_2)
+                            if a_1 == b_1-1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 1)][1, 0]*np.sqrt(b_1)*np.sqrt(b_2+1)
+                            if a_1 == b_1+1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 0)][0]*np.sqrt(b_1+1)
+                            if a_1 == b_1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 0)][1]*np.sqrt(b_2+1)
+                            if a_1 == b_1-1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 1)][0]*np.sqrt(b_1)
+                            if a_1 == b_1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 1)][1]*np.sqrt(b_2)
+                            if a_1 == b_1+2 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][0, 0]*np.sqrt(b_1+1)*np.sqrt(b_1+2)
+                            if a_1 == b_1+1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(2, 0)][0, 1] + self.H[(2, 0)][1, 0])*np.sqrt(b_1+1)*np.sqrt(b_2+1)
+                            if a_1 == b_1 and a_2 == b_2+2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][1, 1]*np.sqrt(b_2+1)*np.sqrt(b_2+2)
+                            if a_1 == b_1-2 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][0, 0]*np.sqrt(b_1)*np.sqrt(b_1-1)
+                            if a_1 == b_1-1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(0, 2)][0, 1] + self.H[(0, 2)][1, 0])*np.sqrt(b_1)*np.sqrt(b_2)
+                            if a_1 == b_1 and a_2 == b_2-2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][1, 1]*np.sqrt(b_2)*np.sqrt(b_2-1)
+
+            Hamiltonian = Hamiltonian.reshape(basis_size**self.N, basis_size**self.N)
+
+            return Hamiltonian
+
+        def Cal_partition_function(E, T):
+            """ compute partition function """
+            Z = sum(np.exp(-E / (self.Kb * T)))
+            return Z
+
+        def Cal_thermal_internal_energy(E, T, Z):
+            """ compute thermal_internal_energy """
+            energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
+            return energy
+
+
+
+        compare_with_TFCC = True
+        if compare_with_TFCC:
+            T_grid = self.temperature_grid
+        # contruct Hamiltonian in H.O. basis
+        H = construct_full_Hamitonian()
+        # check Hemicity of the Hamitonian in H. O. basis
+        assert np.allclose(H, H.transpose())
+        # diagonalize the Hamiltonian
+        E, V = np.linalg.eigh(H)
+
+        # calculate partition function
+        partition_function = np.zeros_like(T_grid)
+        for i, T in enumerate(T_grid):
+            partition_function[i] = Cal_partition_function(E, T)
+
+        # calculate thermal internal energy
+        thermal_internal_energy = np.zeros_like(T_grid)
+        for i, T in enumerate(T_grid):
+            thermal_internal_energy[i] = Cal_thermal_internal_energy(E, T, partition_function[i])
+
+        # store thermal data
+        thermal_data = {"T(K)": T_grid, "partition function": partition_function, "internal energy": thermal_internal_energy}
+        df = pd.DataFrame(thermal_data)
+        df.to_csv("thermal_data_FCI.csv", index=False)
+
+        return
+
+
+
+
     def thermal_field_transformation(self, Temp):
         """conduct Bogoliubov transformation of input Hamiltonian and determine thermal field reference state"""
         # calculate inverse temperature
+        self.T_ref = Temp
         beta = 1. / (self.Kb * Temp)
         # define Bogliubov transformation based on Bose-Einstein statistics
         self.cosh_theta = 1. / np.sqrt((np.ones(self.N) - np.exp(-beta * self.Freq)))
@@ -81,17 +166,17 @@ class vibronic_model_hamiltonian(object):
         self.H_tilde = dict()
 
         # constant term???
-        self.H_tilde[(0, 0)] = self.H[(0, 0)] + sum(self.sinh_theta**2)
+        self.H_tilde[(0, 0)] = self.H[(0, 0)] + np.trace(np.einsum('ij,i,j->ij', self.H[(1, 1)], self.sinh_theta, self.sinh_theta))
 
-        # linear terns
+        # linear terms
         self.H_tilde[(1, 0)] = {
                                "a": self.cosh_theta * self.H[(1, 0)],
                                "b": self.sinh_theta * self.H[(0, 1)]
                                }
 
         self.H_tilde[(0, 1)] = {
-                               "a": self.sinh_theta * self.H[(0, 1)],
-                               "b": self.cosh_theta * self.H[(1, 0)]
+                               "a": self.cosh_theta * self.H[(0, 1)],
+                               "b": self.sinh_theta * self.H[(1, 0)]
                                }
 
         # quadratic terms
@@ -99,7 +184,7 @@ class vibronic_model_hamiltonian(object):
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
                                 "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
+                                "bb": np.einsum('j,i,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
                                }
 
         self.H_tilde[(2, 0)] = {
@@ -126,8 +211,15 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def _map_initial_T_amplitude(self, T_initial):
+    def _map_initial_T_amplitude(self, T_initial=1000):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
+        def map_t_0_amplitude(beta):
+            """map t_0 amplitude from partition function"""
+            z = 1
+            for i,w in enumerate(self.Freq):
+                z *= np.exp(-beta * w / 2) / (1 - np.exp(-beta * w))
+            t_0 = np.log(z)
+            return t_0
         def map_t1_amplitude():
             """map t_1 amplitude from linear coupling constant"""
             # initialize t1 amplitude
@@ -152,11 +244,12 @@ class vibronic_model_hamiltonian(object):
         two_RDM = np.diag(np.exp(beta_initial * self.Freq))
 
         initial_T_amplitude = {}
-        initial_T_amplitude["t1"] = map_t1_amplitude()
-        initial_T_amplitude["t2"] = map_t2_amplitude(two_RDM, initial_T_amplitude['t1'])
+        initial_T_amplitude[0] = map_t_0_amplitude(beta_initial)
+        initial_T_amplitude[1] = map_t1_amplitude()
+        initial_T_amplitude[2] = map_t2_amplitude(two_RDM, initial_T_amplitude[1])
 
-        print("initial single T amplitude:\n{:}".format(initial_T_amplitude["t1"]))
-        print("initial double T amplitude:\n{:}".format(initial_T_amplitude["t2"]))
+        print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
+        print("initial double T amplitude:\n{:}".format(initial_T_amplitude[2]))
 
         return initial_T_amplitude
 
@@ -226,7 +319,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_I"""
 
             # initialize as zero
-            R = np.zeros(N)
+            R = np.zeros(2*N)
 
             # linear
             R += H[(0, 1)]
@@ -240,7 +333,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_i"""
 
             # initialize
-            R = np.zeros(N)
+            R = np.zeros(2*N)
 
             # non zero initial value of R
             R += H[(1, 0)]
@@ -258,7 +351,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_Ij"""
 
             # initialize
-            R = np.zeros([N, N])
+            R = np.zeros([2*N, 2*N])
 
             # first term
             R += H[(1, 1)]
@@ -272,7 +365,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_IJ"""
 
             # initialize as zero
-            R = np.zeros([N, N])
+            R = np.zeros([2*N, 2*N])
 
             # quadratic
             R += H[(0, 2)]
@@ -282,7 +375,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_ij"""
 
             # # initialize as zero
-            R = np.zeros([N, N])
+            R = np.zeros([2*N, 2*N])
 
             # if self.hamiltonian_truncation_order >= 2:
 
@@ -311,6 +404,57 @@ class vibronic_model_hamiltonian(object):
 
         return residue
 
-    def TFCC_integration(self):
+    def TFCC_integration(self, T_initial, T_final, N):
         """conduct TFCC imaginary time integration to calculation thermal perperties"""
+        # map initial T amplitude
+        T_amplitude = self._map_initial_T_amplitude(T_initial=T_initial)
+        beta_initial = 1. / (self.Kb * T_initial)
+        beta_final = 1. / (self.Kb * T_final)
+        step = (beta_final - beta_initial) / N
+        self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N))
+        self.partition_function = []
+        self.internal_energy = []
+        # thermal field imaginary time propagation
+        for i in range(N):
+            Residual = self.CC_residue(self.H_tilde_reduce, T_amplitude)
+            # energy
+            E = Residual[0]
+            self.internal_energy.append(E)
+            # partition function
+            Z = np.exp(T_amplitude[0])
+            self.partition_function.append(Z)
+            # update amplitudes
+            T_amplitude[0] -= Residual[0] * step
+            T_amplitude[1] -= Residual[1] * step
+            T_amplitude[2] -= Residual[2] * step
+            print("step {:}:".format(i))
+            print("Temperature: {:} K".format(self.temperature_grid[i]))
+            print("thermal internal energy: {:} cm-1".format(E))
+            print("partition function: {:}".format(Z))
+
+        # store data
+        thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
+        df = pd.DataFrame(thermal_data)
+        df.to_csv("thermal_data_TFCC.csv", index=False)
+
         return
+
+    def plot_thermal(self):
+        """plot thermal properties"""
+        print(len(self.temperature_grid))
+        print(len(self.internal_energy))
+        plt.figure(figsize=(10, 10))
+        plt.title("Plot of thermal internal energy", fontsize=40)
+        plt.plot(self.temperature_grid, self.internal_energy)
+        plt.xlabel("T(K)", fontsize=40)
+        plt.ylabel("energy(cm-1)", fontsize=40)
+        plt.show()
+        # plt.savefig("energy.png")
+
+        plt.figure(figsize=(10, 10))
+        plt.title("Plot of partition function", fontsize=40)
+        plt.plot(self.temperature_grid, self.partition_function)
+        plt.xlabel("T(K)", fontsize=40)
+        plt.ylabel("partition_function", fontsize=40)
+        # plt.show()
+        plt.savefig("partition_function.png")
