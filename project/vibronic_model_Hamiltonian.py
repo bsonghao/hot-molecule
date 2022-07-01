@@ -123,7 +123,7 @@ class vibronic_model_hamiltonian(object):
 
 
 
-        compare_with_TFCC = True
+        compare_with_TFCC = False
         if compare_with_TFCC:
             T_grid = self.temperature_grid
         # contruct Hamiltonian in H.O. basis
@@ -132,7 +132,9 @@ class vibronic_model_hamiltonian(object):
         assert np.allclose(H, H.transpose())
         # diagonalize the Hamiltonian
         E, V = np.linalg.eigh(H)
-
+        # store eigenvector and eigenvalues as class instances
+        self.E_val = E
+        self.V_val = V
         # calculate partition function
         partition_function = np.zeros_like(T_grid)
         for i, T in enumerate(T_grid):
@@ -149,9 +151,6 @@ class vibronic_model_hamiltonian(object):
         df.to_csv("thermal_data_FCI.csv", index=False)
 
         return
-
-
-
 
     def thermal_field_transformation(self, Temp):
         """conduct Bogoliubov transformation of input Hamiltonian and determine thermal field reference state"""
@@ -289,6 +288,201 @@ class vibronic_model_hamiltonian(object):
         print("##### Bogliubov transformed (fictitous) Hamiltonian after merge blocks ######")
         for rank in self.H_tilde_reduce.keys():
             print("Block {:}: \n {:}".format(rank, self.H_tilde_reduce[rank]))
+
+        return
+
+
+    def _map_initial_T_amplitude_from_FCI(self, T_initial=1000, basis_size=40):
+        """map initial T amplitude from FCI"""
+        def cal_rdm_i(E, V, Z, basis_size, beta):
+            """calculate one body density matrix from FCI"""
+            rdm_i = np.zeros(self.N)
+            for l, e in enumerate(E):
+                for i in range(self.N):
+                    for n_i in range(basis_size):
+                        for n_j in range(1, basis_size):
+                            if i == 0:
+                                rdm_i[i] += np.sqrt(n_j) * V[n_j, n_i, l] * V[n_j-1, n_i, l] * np.exp(-beta * e)
+                            elif i == 1:
+                                rdm_i[i] += np.sqrt(n_j) * V[n_i, n_j, l] * V[n_i, n_j-1, l] * np.exp(-beta * e)
+            rdm_i /= Z
+            return rdm_i
+
+        def cal_rdm_I(E, V, Z, basis_size, beta):
+            """calculate one body density matrix from FCI"""
+            rdm_I = np.zeros(self.N)
+            for l, e in enumerate(E):
+                for i in range(self.N):
+                    for n_i in range(basis_size):
+                        for n_j in range(0, basis_size-1):
+                            if i == 0:
+                                rdm_I[i] += np.sqrt(n_j+1) * V[n_j+1, n_i, l] * V[n_j, n_i, l] * np.exp(-beta * e)
+                            elif i == 1:
+                                rdm_I[i] += np.sqrt(n_j+1) * V[n_i, n_j+1, l] * V[n_i, n_j, l] * np.exp(-beta * e)
+            rdm_I /= Z
+            return rdm_I
+
+
+        def cal_rdm_ij(E, V, Z, basis_size, beta):
+            """calculate two body density matrix from FCI"""
+            rdm_ij = np.zeros([self.N, self.N])
+            for i in range(self.N):
+                for j in range(self.N):
+                    #i=j
+                    if i == j:
+                        for n_i in range(2, basis_size):
+                            for n_j in range(basis_size):
+                                for l, e in enumerate(E):
+                                    if i == 0:
+                                        rdm_ij[i, i] += np.sqrt(n_i) * np.sqrt(n_i-1) *\
+                                                   V[n_i-2, n_j, l] * V[n_i, n_j, l] *\
+                                                   np.exp(-e * beta)
+                                    else:
+                                        rdm_ij[i, i] += np.sqrt(n_i) * np.sqrt(n_i-1) *\
+                                                    V[n_j, n_i-2, l]* V[n_j, n_i, l] *\
+                                                    np.exp(-e * beta)
+
+                    #i!=j
+                    else:
+                        for n_i in range(1, basis_size):
+                            for n_j in range(1, basis_size):
+                                for l, e in enumerate(E):
+                                    if i == 0 and j == 1:
+                                        rdm_ij[i, j] += np.sqrt(n_i) * np.sqrt(n_j) *\
+                                                    V[n_i-1, n_j-1, l]* V[n_i, n_j, l] *\
+                                                    np.exp(-e * beta)
+                                    elif i == 1 and j == 0:
+                                        rdm_ij[i, j] += np.sqrt(n_i) * np.sqrt(n_j) *\
+                                                    V[n_j-1, n_i-1, l] * V[n_j, n_i, l] *\
+                                                    np.exp(-e * beta)
+            rdm_ij /= Z
+            return rdm_ij
+
+        def cal_rdm_IJ(E, V, Z, basis_size, beta):
+            """calculate two body density matrix from FCI"""
+            rdm_IJ = np.zeros([self.N, self.N])
+            for i in range(self.N):
+                for j in range(self.N):
+                    #i=j
+                    if i == j:
+                        for n_i in range(basis_size-2):
+                            for n_j in range(basis_size):
+                                for l, e in enumerate(E):
+                                    if i == 0:
+                                        rdm_IJ[i, i] += np.sqrt(n_i+1) * np.sqrt(n_i+2) *\
+                                                   V[n_i+2, n_j, l] * V[n_i, n_j, l] *\
+                                                   np.exp(-e * beta)
+                                    else:
+                                        rdm_IJ[i, i] += np.sqrt(n_i+1) * np.sqrt(n_i+2) *\
+                                                    V[n_j, n_i+2, l] * V[n_j, n_i, l] *\
+                                                    np.exp(-e * beta)
+
+                    #i!=j
+                    else:
+                        for n_i in range(basis_size-1):
+                            for n_j in range(basis_size-1):
+                                for l, e in enumerate(E):
+                                    if i == 0 and j == 1:
+                                        rdm_IJ[i, j] += np.sqrt(n_i+1) * np.sqrt(n_j+1) *\
+                                                    V[n_i+1, n_j+1, l] * V[n_i, n_j, l] *\
+                                                    np.exp(-e * beta)
+                                    elif i == 1 and j == 0:
+                                        rdm_IJ[i, j] += np.sqrt(n_i+1) * np.sqrt(n_j+1) *\
+                                                    V[n_j+1, n_i+1, l] * V[n_j, n_i, l] *\
+                                                    np.exp(-e * beta)
+            rdm_IJ /= Z
+            return rdm_IJ
+
+        def cal_rdm_Ij(E, V, Z, basis_size, beta):
+            """calculate two body density matrix from FCI"""
+            rdm_Ij = np.zeros([self.N, self.N])
+            for i in range(self.N):
+                for j in range(self.N):
+                    #i=j
+                    if i == j:
+                        for n_i in range(basis_size):
+                            for n_j in range(basis_size):
+                                for l, e in enumerate(E):
+                                    if i == 0:
+                                        rdm_Ij[i, i] += n_i *\
+                                                   V[n_i, n_j, l] * V[n_i, n_j, l] *\
+                                                   np.exp(-e * beta)
+                                    else:
+                                        rdm_Ij[i, i] += n_i *\
+                                                    V[n_j, n_i, l] * V[n_j, n_i, l] *\
+                                                    np.exp(-e * beta)
+
+                    #i!=j
+                    else:
+                        for n_i in range(basis_size-1):
+                            for n_j in range(1, basis_size):
+                                for l, e in enumerate(E):
+                                    if i == 0 and j == 1:
+                                        rdm_Ij[i, j] += np.sqrt(n_i+1) * np.sqrt(n_j) *\
+                                                    V[n_i+1, n_j-1, l] * V[n_i, n_j, l] *\
+                                                    np.exp(-e * beta)
+                                    elif i == 1 and j == 0:
+                                        rdm_Ij[i, j] += np.sqrt(n_i+1) * np.sqrt(n_j) *\
+                                                    V[n_j-1, n_i+1, l] * V[n_j, n_i, l] *\
+                                                    np.exp(-e * beta)
+            rdm_Ij /= Z
+            return rdm_Ij
+
+        def cal_rdm_iJ(E, V, Z, basis_size, beta):
+            """calculate two body density matrix from FCI"""
+            rdm_iJ = np.zeros([self.N, self.N])
+            for i in range(self.N):
+                for j in range(self.N):
+                    #i=j
+                    if i == j:
+                        for n_i in range(basis_size):
+                            for n_j in range(basis_size):
+                                for l, e in enumerate(E):
+                                    if i == 0:
+                                        rdm_iJ[i, i] += (n_i + 1) *\
+                                                   V[n_i, n_j, l] * V[n_i, n_j, l] *\
+                                                   np.exp(-e * beta)
+                                    else:
+                                        rdm_iJ[i, i] += (n_i + 1) *\
+                                                    V[n_j, n_i, l] * V[n_j, n_i, l] *\
+                                                    np.exp(-e * beta)
+
+                    #i!=j
+                    else:
+                        for n_i in range(1, basis_size):
+                            for n_j in range(basis_size-1):
+                                for l, e in enumerate(E):
+                                    if i == 0 and j == 1:
+                                        rdm_iJ[i, j] += np.sqrt(n_i) * np.sqrt(n_j+1) *\
+                                                    V[n_i-1, n_j+1, l] * V[n_i, n_j, l] *\
+                                                    np.exp(-e * beta)
+                                    elif i == 1 and j == 0:
+                                        rdm_iJ[i, j] += np.sqrt(n_i) * np.sqrt(n_j+1) *\
+                                                    V[n_j+1, n_i-1, l] * V[n_j, n_i, l] *\
+                                                    np.exp(-e * beta)
+            rdm_iJ /= Z
+            return rdm_iJ
+
+        beta_initial = 1. / (self.Kb * T_initial)
+        # calculation parttion function as normalization factor
+        Z = sum(np.exp(-beta_initial * self.E_val))
+
+        # reshape eigen vector
+        self.V_val = self.V_val.reshape([basis_size, basis_size, basis_size**self.N])
+
+        # initialize physical density matrix
+        DM_phys = {}
+        DM_phys[(1, 0)] = cal_rdm_I(self.E_val, self.V_val, Z, basis_size, beta_initial)
+        DM_phys[(0, 1)] = cal_rdm_i(self.E_val, self.V_val, Z, basis_size, beta_initial)
+        DM_phys['Ij'] = cal_rdm_Ij(self.E_val, self.V_val, Z, basis_size, beta_initial)
+        DM_phys['iJ'] = cal_rdm_iJ(self.E_val, self.V_val, Z, basis_size, beta_initial)
+        DM_phys[(2, 0)] = cal_rdm_IJ(self.E_val, self.V_val, Z, basis_size, beta_initial)
+        DM_phys[(0, 2)] = cal_rdm_ij(self.E_val, self.V_val, Z, basis_size, beta_initial)
+
+        print("Physical density matrix mapped from FCI:")
+        for block in DM_phys.keys():
+            print("{:}:\n{:}".format(block, DM_phys[block]))
+
 
         return
 
