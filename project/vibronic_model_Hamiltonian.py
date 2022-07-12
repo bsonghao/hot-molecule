@@ -70,7 +70,7 @@ class vibronic_model_hamiltonian(object):
 
         print("### End of Hamiltonian parameters ####")
 
-    def sum_over_states(self, basis_size=40, T_grid=np.linspace(100, 1000, 10000)):
+    def sum_over_states(self, output_path, basis_size=40, T_grid=np.linspace(100, 1000, 10000)):
         """calculation thermal properties through sum over states"""
         def construct_full_Hamitonian():
             """construct full Hamiltonian in H.O. basis"""
@@ -148,7 +148,7 @@ class vibronic_model_hamiltonian(object):
         # store thermal data
         thermal_data = {"T(K)": T_grid, "partition function": partition_function, "internal energy": thermal_internal_energy}
         df = pd.DataFrame(thermal_data)
-        df.to_csv("thermal_data_FCI.csv", index=False)
+        df.to_csv(output_path+"thermal_data_FCI.csv", index=False)
 
         return
 
@@ -252,6 +252,25 @@ class vibronic_model_hamiltonian(object):
 
         return initial_T_amplitude
 
+    def merge_linear(self, input_tensor):
+        """ merge linear terms of the Bogliubov transformed tensor """
+        N = self.N
+        output_tensor = np.zeros(2 * N)
+        output_tensor[:N] = input_tensor['a'].copy()
+        output_tensor[N:] = input_tensor['b'].copy()
+
+        return output_tensor
+
+    def merge_quadratic(self, input_tensor):
+        """ merge quadratic_terms of the Bogliubov transformed tensor """
+        N =self.N
+        output_tensor = np.zeros([2 * N, 2 * N])
+        output_tensor[:N, :N] = input_tensor["aa"].copy()
+        output_tensor[:N, N:] = input_tensor["ab"].copy()
+        output_tensor[N:, :N] = input_tensor["ba"].copy()
+        output_tensor[N:, N:] = input_tensor["bb"].copy()
+        return output_tensor
+
     def reduce_H_tilde(self):
         """merge the a, b blocks of the Bogliubov transformed Hamiltonian into on tensor"""
         N = self.N
@@ -259,31 +278,12 @@ class vibronic_model_hamiltonian(object):
         self.H_tilde_reduce = {
             (0, 0): self.H_tilde[(0, 0)],
             }
-
-        def merge_linear(input_tensor):
-            """ merge linear terms of the Hamiltonian """
-            output_tensor = np.zeros(2 * N)
-            output_tensor[:N] = input_tensor['a'].copy()
-            output_tensor[N:] = input_tensor['b'].copy()
-
-            return output_tensor
-
-        def merge_quadratic(input_tensor):
-            """ merge quadratic_terms of the Hamiltonian """
-            output_tensor = np.zeros([2 * N, 2 * N])
-            output_tensor[:N, :N] = input_tensor["aa"].copy()
-            output_tensor[:N, N:] = input_tensor["ab"].copy()
-            output_tensor[N:, :N] = input_tensor["ba"].copy()
-            output_tensor[N:, N:] = input_tensor["bb"].copy()
-
-            return output_tensor
-
         # merge linear terms
-        self.H_tilde_reduce[(1, 0)] = merge_linear(self.H_tilde[(1, 0)])
-        self.H_tilde_reduce[(0, 1)] = merge_linear(self.H_tilde[(0, 1)])
-        self.H_tilde_reduce[(1, 1)] = merge_quadratic(self.H_tilde[(1, 1)])
-        self.H_tilde_reduce[(2, 0)] = merge_quadratic(self.H_tilde[(2, 0)])
-        self.H_tilde_reduce[(0, 2)] = merge_quadratic(self.H_tilde[(0, 2)])
+        self.H_tilde_reduce[(1, 0)] = self.merge_linear(self.H_tilde[(1, 0)])
+        self.H_tilde_reduce[(0, 1)] = self.merge_linear(self.H_tilde[(0, 1)])
+        self.H_tilde_reduce[(1, 1)] = self.merge_quadratic(self.H_tilde[(1, 1)])
+        self.H_tilde_reduce[(2, 0)] = self.merge_quadratic(self.H_tilde[(2, 0)])
+        self.H_tilde_reduce[(0, 2)] = self.merge_quadratic(self.H_tilde[(0, 2)])
 
         print("##### Bogliubov transformed (fictitous) Hamiltonian after merge blocks ######")
         for rank in self.H_tilde_reduce.keys():
@@ -463,6 +463,29 @@ class vibronic_model_hamiltonian(object):
             rdm_iJ /= Z
             return rdm_iJ
 
+
+        def map_quasi_1_RDM(DM):
+            """map quasi 1-RDM from physical density matrices"""
+            RDM_1 = {}
+            RDM_1["a"] = DM[(1, 0)] / self.cosh_theta
+            RDM_1["b"] = DM[(0, 1)] / self.sinh_theta
+            return RDM_1
+
+        def map_quasi_2_RDM(DM):
+            """map quasi 2-RDM from physical densitry matrix"""
+            RDM_2 = {}
+            RDM_2["ab"] = DM["iJ"] / np.einsum('i,j->ij', self.cosh_theta, self.sinh_theta)
+            RDM_2["ba"] = DM["Ij"] / np.einsum('i,j->ij', self.sinh_theta, self.cosh_theta)
+            RDM_2["aa"] = DM[(2, 0)] / np.einsum('i,j->ij', self.cosh_theta, self.cosh_theta)
+            RDM_2["bb"] = DM[(0, 2)] / np.einsum('i,j->ij', self.sinh_theta, self.sinh_theta)
+            return RDM_2
+
+        def map_T_from_RDM(DM):
+            """map initial T amplitude from quasi particle density matrix"""
+            T = {}
+            T[1] = DM[1]
+            T[2] = DM[2] - np.einsum('i,j->ij', T[1], T[1])
+            return T
         beta_initial = 1. / (self.Kb * T_initial)
         # calculation parttion function as normalization factor
         Z = sum(np.exp(-beta_initial * self.E_val))
@@ -483,8 +506,23 @@ class vibronic_model_hamiltonian(object):
         for block in DM_phys.keys():
             print("{:}:\n{:}".format(block, DM_phys[block]))
 
+        # initial quasi density matrix
+        RDM_quasi = {}
+        RDM_quasi[1] = self.merge_linear(map_quasi_1_RDM(DM_phys))
+        RDM_quasi[2] = self.merge_quadratic(map_quasi_2_RDM(DM_phys))
 
-        return
+        print("Quasi particle density matrix mapped from FCI")
+        for block in RDM_quasi.keys():
+            print("{:}:\n{:}".format(block, RDM_quasi[block]))
+
+        # initial T amplitdue
+        T_initial = map_T_from_RDM(RDM_quasi)
+        T_initial[0] = np.log(Z)
+        print("initial T amplitude")
+        for block in T_initial.keys():
+            print("{:}:\n{:}".format(block, T_initial[block]))
+
+        return T_initial
 
 
     def CC_residue(self, H_args, T_args):
