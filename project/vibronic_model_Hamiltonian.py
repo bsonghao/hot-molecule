@@ -16,7 +16,7 @@ import scipy
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 import numpy as np
-import matplotlib as mpl; mpl.use('pdf')
+# import matplotlib as mpl; mpl.use('pdf')
 import matplotlib.pyplot as plt
 import parse  # used for loading data files
 import pandas as pd
@@ -46,7 +46,7 @@ class vibronic_model_hamiltonian(object):
         # Boltzmann constant (eV K-1)
         self.Kb = 8.61733326e-5
 
-        # define Hamiltonian obrect as a python dictionary where the keys are the rank of the Hamiltonian
+        # define Hamiltonian object as a python dictionary where the keys are the rank of the Hamiltonian
         # and we represent the Hamitlnian in the form of second quantization
         self.H = dict()
         # constant
@@ -121,14 +121,12 @@ class vibronic_model_hamiltonian(object):
             energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
-
-
-        compare_with_TFCC = False
+        compare_with_TFCC = True
         if compare_with_TFCC:
             T_grid = self.temperature_grid
         # contruct Hamiltonian in H.O. basis
         H = construct_full_Hamitonian()
-        # check Hemicity of the Hamitonian in H. O. basis
+        # check Hermicity of the Hamitonian in H. O. basis
         assert np.allclose(H, H.transpose())
         # diagonalize the Hamiltonian
         E, V = np.linalg.eigh(H)
@@ -463,7 +461,6 @@ class vibronic_model_hamiltonian(object):
             rdm_iJ /= Z
             return rdm_iJ
 
-
         def map_quasi_1_RDM(DM):
             """map quasi 1-RDM from physical density matrices"""
             RDM_1 = {}
@@ -636,8 +633,8 @@ class vibronic_model_hamiltonian(object):
 
         return residue
 
-    def TFCC_integration(self, T_initial, T_final, N):
-        """conduct TFCC imaginary time integration to calculation thermal perperties"""
+    def TFCC_integration(self, output_path, T_initial, T_final, N):
+        """conduct TFCC imaginary time integration to calculation thermal properties"""
         # map initial T amplitude
         T_amplitude = self._map_initial_T_amplitude(T_initial=T_initial)
         beta_initial = 1. / (self.Kb * T_initial)
@@ -667,7 +664,7 @@ class vibronic_model_hamiltonian(object):
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
-        df.to_csv("thermal_data_TFCC.csv", index=False)
+        df.to_csv(output_path+"thermal_data_TFCC.csv", index=False)
 
         return
 
@@ -688,5 +685,5 @@ class vibronic_model_hamiltonian(object):
         plt.plot(self.temperature_grid, self.partition_function)
         plt.xlabel("T(K)", fontsize=40)
         plt.ylabel("partition_function", fontsize=40)
-        # plt.show()
-        plt.savefig("partition_function.png")
+        plt.show()
+        # plt.savefig("partition_function.png")

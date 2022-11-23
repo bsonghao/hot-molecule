@@ -11,12 +11,13 @@ import pstats
 import numpy as np
 
 # import the path to the package
-project_dir = abspath(join(dirname(__file__), '/home/paulie/hot-molecule'))
+project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule'))
 sys.path.insert(0, project_dir)
-outputdir =  '/home/paulie/hot-molecule/data/'
+outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
-from project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
+import Project
+from Project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
 
 
 def main():
@@ -40,13 +41,13 @@ def main():
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, num_mode)
-    model.thermal_field_transformation(Temp=2e3)
+    model.thermal_field_transformation(Temp=1e3)
     model.reduce_H_tilde()
-    # model.TFCC_integration(T_initial=10000, T_final=100, N=10000)
+    model.TFCC_integration(T_initial=1e4, T_final=100, N=10000, output_path=outputdir)
     model.sum_over_states(basis_size=10, output_path=outputdir)
     model._map_initial_T_amplitude_from_FCI(T_initial=1000, basis_size=10)
 
-    # model.plot_thermal()
+    model.plot_thermal()
     #model._map_initial_T_amplitude(T_initial=1000.)
 
     return
