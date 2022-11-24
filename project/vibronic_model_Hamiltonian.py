@@ -70,7 +70,7 @@ class vibronic_model_hamiltonian(object):
 
         print("### End of Hamiltonian parameters ####")
 
-    def sum_over_states(self, output_path, basis_size=40, T_grid=np.linspace(100, 1000, 10000)):
+    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N=10000):
         """calculation thermal properties through sum over states"""
         def construct_full_Hamitonian():
             """construct full Hamiltonian in H.O. basis"""
@@ -121,9 +121,10 @@ class vibronic_model_hamiltonian(object):
             energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
-        compare_with_TFCC = True
-        if compare_with_TFCC:
-            T_grid = self.temperature_grid
+        beta_initial = 1. / (T_initial * self.Kb)
+        beta_final = 1. / (T_final * self.Kb)
+        T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N))
+        self.T_FCI = T_grid
         # contruct Hamiltonian in H.O. basis
         H = construct_full_Hamitonian()
         # check Hermicity of the Hamitonian in H. O. basis
@@ -482,6 +483,7 @@ class vibronic_model_hamiltonian(object):
             T = {}
             T[1] = DM[1]
             T[2] = DM[2] - np.einsum('i,j->ij', T[1], T[1])
+            # assert np.allclose(T[2], np.transpose(T[2]))
             return T
         beta_initial = 1. / (self.Kb * T_initial)
         # calculation parttion function as normalization factor
@@ -633,10 +635,12 @@ class vibronic_model_hamiltonian(object):
 
         return residue
 
-    def TFCC_integration(self, output_path, T_initial, T_final, N):
+    def TFCC_integration(self, output_path, T_initial, T_final, N, compare_with_FCI=True):
         """conduct TFCC imaginary time integration to calculation thermal properties"""
         # map initial T amplitude
-        T_amplitude = self._map_initial_T_amplitude(T_initial=T_initial)
+        if compare_with_FCI:
+            T_amplitude = self._map_initial_T_amplitude_from_FCI(T_initial=T_initial)
+
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
         step = (beta_final - beta_initial) / N
