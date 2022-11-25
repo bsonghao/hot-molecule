@@ -151,64 +151,6 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def thermal_field_transformation(self, Temp):
-        """conduct Bogoliubov transformation of input Hamiltonian and determine thermal field reference state"""
-        # calculate inverse temperature
-        self.T_ref = Temp
-        beta = 1. / (self.Kb * Temp)
-        # define Bogliubov transformation based on Bose-Einstein statistics
-        self.cosh_theta = 1. / np.sqrt((np.ones(self.N) - np.exp(-beta * self.Freq)))
-        self.sinh_theta = np.exp(-beta * self.Freq / 2.) / np.sqrt(np.ones(self.N) - np.exp(-beta * self.Freq))
-
-        # Bogliubov tranform that Hamiltonian
-        self.H_tilde = dict()
-
-        # constant term???
-        self.H_tilde[(0, 0)] = self.H[(0, 0)] + np.trace(np.einsum('ij,i,j->ij', self.H[(1, 1)], self.sinh_theta, self.sinh_theta))
-
-        # linear terms
-        self.H_tilde[(1, 0)] = {
-                               "a": self.cosh_theta * self.H[(1, 0)],
-                               "b": self.sinh_theta * self.H[(0, 1)]
-                               }
-
-        self.H_tilde[(0, 1)] = {
-                               "a": self.cosh_theta * self.H[(0, 1)],
-                               "b": self.sinh_theta * self.H[(1, 0)]
-                               }
-
-        # quadratic terms
-        self.H_tilde[(1, 1)] = {
-                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(1, 1)]),
-                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
-                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "bb": np.einsum('j,i,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
-                               }
-
-        self.H_tilde[(2, 0)] = {
-                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(2, 0)]),
-                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
-                                "ba": np.zeros_like(self.H[2, 0]),
-                                "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(0, 2)]),
-                               }
-
-        self.H_tilde[(0, 2)] = {
-                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "ab": np.zeros_like(self.H[(0, 2)]),
-                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
-                                "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(2, 0)])
-                               }
-
-        print("###### Bogliubov transformed Hamiltonian ########")
-        for rank in self.H_tilde.keys():
-            if rank == (0, 0):
-                print("Rank:{:}\n{:}".format(rank, self.H_tilde[rank]))
-            else:
-                for block in self.H_tilde[rank].keys():
-                    print("Rank:{:} Block:{:}\n{:}".format(rank, block, self.H_tilde[rank][block]))
-
-        return
-
     def _map_initial_T_amplitude(self, T_initial=1000):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
         def map_t_0_amplitude(beta):
@@ -251,279 +193,6 @@ class vibronic_model_hamiltonian(object):
 
         return initial_T_amplitude
 
-    def merge_linear(self, input_tensor):
-        """ merge linear terms of the Bogliubov transformed tensor """
-        N = self.N
-        output_tensor = np.zeros(2 * N)
-        output_tensor[:N] = input_tensor['a'].copy()
-        output_tensor[N:] = input_tensor['b'].copy()
-
-        return output_tensor
-
-    def merge_quadratic(self, input_tensor):
-        """ merge quadratic_terms of the Bogliubov transformed tensor """
-        N =self.N
-        output_tensor = np.zeros([2 * N, 2 * N])
-        output_tensor[:N, :N] = input_tensor["aa"].copy()
-        output_tensor[:N, N:] = input_tensor["ab"].copy()
-        output_tensor[N:, :N] = input_tensor["ba"].copy()
-        output_tensor[N:, N:] = input_tensor["bb"].copy()
-        return output_tensor
-
-    def reduce_H_tilde(self):
-        """merge the a, b blocks of the Bogliubov transformed Hamiltonian into on tensor"""
-        N = self.N
-        # initialize
-        self.H_tilde_reduce = {
-            (0, 0): self.H_tilde[(0, 0)],
-            }
-        # merge linear terms
-        self.H_tilde_reduce[(1, 0)] = self.merge_linear(self.H_tilde[(1, 0)])
-        self.H_tilde_reduce[(0, 1)] = self.merge_linear(self.H_tilde[(0, 1)])
-        self.H_tilde_reduce[(1, 1)] = self.merge_quadratic(self.H_tilde[(1, 1)])
-        self.H_tilde_reduce[(2, 0)] = self.merge_quadratic(self.H_tilde[(2, 0)])
-        self.H_tilde_reduce[(0, 2)] = self.merge_quadratic(self.H_tilde[(0, 2)])
-
-        print("##### Bogliubov transformed (fictitous) Hamiltonian after merge blocks ######")
-        for rank in self.H_tilde_reduce.keys():
-            print("Block {:}: \n {:}".format(rank, self.H_tilde_reduce[rank]))
-
-        return
-
-
-    def _map_initial_T_amplitude_from_FCI(self, T_initial=1000, basis_size=40):
-        """map initial T amplitude from FCI"""
-        def cal_rdm_i(E, V, Z, basis_size, beta):
-            """calculate one body density matrix from FCI"""
-            rdm_i = np.zeros(self.N)
-            for l, e in enumerate(E):
-                for i in range(self.N):
-                    for n_i in range(basis_size):
-                        for n_j in range(1, basis_size):
-                            if i == 0:
-                                rdm_i[i] += np.sqrt(n_j) * V[n_j, n_i, l] * V[n_j-1, n_i, l] * np.exp(-beta * e)
-                            elif i == 1:
-                                rdm_i[i] += np.sqrt(n_j) * V[n_i, n_j, l] * V[n_i, n_j-1, l] * np.exp(-beta * e)
-            rdm_i /= Z
-            return rdm_i
-
-        def cal_rdm_I(E, V, Z, basis_size, beta):
-            """calculate one body density matrix from FCI"""
-            rdm_I = np.zeros(self.N)
-            for l, e in enumerate(E):
-                for i in range(self.N):
-                    for n_i in range(basis_size):
-                        for n_j in range(0, basis_size-1):
-                            if i == 0:
-                                rdm_I[i] += np.sqrt(n_j+1) * V[n_j+1, n_i, l] * V[n_j, n_i, l] * np.exp(-beta * e)
-                            elif i == 1:
-                                rdm_I[i] += np.sqrt(n_j+1) * V[n_i, n_j+1, l] * V[n_i, n_j, l] * np.exp(-beta * e)
-            rdm_I /= Z
-            return rdm_I
-
-
-        def cal_rdm_ij(E, V, Z, basis_size, beta):
-            """calculate two body density matrix from FCI"""
-            rdm_ij = np.zeros([self.N, self.N])
-            for i in range(self.N):
-                for j in range(self.N):
-                    #i=j
-                    if i == j:
-                        for n_i in range(2, basis_size):
-                            for n_j in range(basis_size):
-                                for l, e in enumerate(E):
-                                    if i == 0:
-                                        rdm_ij[i, i] += np.sqrt(n_i) * np.sqrt(n_i-1) *\
-                                                   V[n_i-2, n_j, l] * V[n_i, n_j, l] *\
-                                                   np.exp(-e * beta)
-                                    else:
-                                        rdm_ij[i, i] += np.sqrt(n_i) * np.sqrt(n_i-1) *\
-                                                    V[n_j, n_i-2, l]* V[n_j, n_i, l] *\
-                                                    np.exp(-e * beta)
-
-                    #i!=j
-                    else:
-                        for n_i in range(1, basis_size):
-                            for n_j in range(1, basis_size):
-                                for l, e in enumerate(E):
-                                    if i == 0 and j == 1:
-                                        rdm_ij[i, j] += np.sqrt(n_i) * np.sqrt(n_j) *\
-                                                    V[n_i-1, n_j-1, l]* V[n_i, n_j, l] *\
-                                                    np.exp(-e * beta)
-                                    elif i == 1 and j == 0:
-                                        rdm_ij[i, j] += np.sqrt(n_i) * np.sqrt(n_j) *\
-                                                    V[n_j-1, n_i-1, l] * V[n_j, n_i, l] *\
-                                                    np.exp(-e * beta)
-            rdm_ij /= Z
-            return rdm_ij
-
-        def cal_rdm_IJ(E, V, Z, basis_size, beta):
-            """calculate two body density matrix from FCI"""
-            rdm_IJ = np.zeros([self.N, self.N])
-            for i in range(self.N):
-                for j in range(self.N):
-                    #i=j
-                    if i == j:
-                        for n_i in range(basis_size-2):
-                            for n_j in range(basis_size):
-                                for l, e in enumerate(E):
-                                    if i == 0:
-                                        rdm_IJ[i, i] += np.sqrt(n_i+1) * np.sqrt(n_i+2) *\
-                                                   V[n_i+2, n_j, l] * V[n_i, n_j, l] *\
-                                                   np.exp(-e * beta)
-                                    else:
-                                        rdm_IJ[i, i] += np.sqrt(n_i+1) * np.sqrt(n_i+2) *\
-                                                    V[n_j, n_i+2, l] * V[n_j, n_i, l] *\
-                                                    np.exp(-e * beta)
-
-                    #i!=j
-                    else:
-                        for n_i in range(basis_size-1):
-                            for n_j in range(basis_size-1):
-                                for l, e in enumerate(E):
-                                    if i == 0 and j == 1:
-                                        rdm_IJ[i, j] += np.sqrt(n_i+1) * np.sqrt(n_j+1) *\
-                                                    V[n_i+1, n_j+1, l] * V[n_i, n_j, l] *\
-                                                    np.exp(-e * beta)
-                                    elif i == 1 and j == 0:
-                                        rdm_IJ[i, j] += np.sqrt(n_i+1) * np.sqrt(n_j+1) *\
-                                                    V[n_j+1, n_i+1, l] * V[n_j, n_i, l] *\
-                                                    np.exp(-e * beta)
-            rdm_IJ /= Z
-            return rdm_IJ
-
-        def cal_rdm_Ij(E, V, Z, basis_size, beta):
-            """calculate two body density matrix from FCI"""
-            rdm_Ij = np.zeros([self.N, self.N])
-            for i in range(self.N):
-                for j in range(self.N):
-                    #i=j
-                    if i == j:
-                        for n_i in range(basis_size):
-                            for n_j in range(basis_size):
-                                for l, e in enumerate(E):
-                                    if i == 0:
-                                        rdm_Ij[i, i] += n_i *\
-                                                   V[n_i, n_j, l] * V[n_i, n_j, l] *\
-                                                   np.exp(-e * beta)
-                                    else:
-                                        rdm_Ij[i, i] += n_i *\
-                                                    V[n_j, n_i, l] * V[n_j, n_i, l] *\
-                                                    np.exp(-e * beta)
-
-                    #i!=j
-                    else:
-                        for n_i in range(basis_size-1):
-                            for n_j in range(1, basis_size):
-                                for l, e in enumerate(E):
-                                    if i == 0 and j == 1:
-                                        rdm_Ij[i, j] += np.sqrt(n_i+1) * np.sqrt(n_j) *\
-                                                    V[n_i+1, n_j-1, l] * V[n_i, n_j, l] *\
-                                                    np.exp(-e * beta)
-                                    elif i == 1 and j == 0:
-                                        rdm_Ij[i, j] += np.sqrt(n_i+1) * np.sqrt(n_j) *\
-                                                    V[n_j-1, n_i+1, l] * V[n_j, n_i, l] *\
-                                                    np.exp(-e * beta)
-            rdm_Ij /= Z
-            return rdm_Ij
-
-        def cal_rdm_iJ(E, V, Z, basis_size, beta):
-            """calculate two body density matrix from FCI"""
-            rdm_iJ = np.zeros([self.N, self.N])
-            for i in range(self.N):
-                for j in range(self.N):
-                    #i=j
-                    if i == j:
-                        for n_i in range(basis_size):
-                            for n_j in range(basis_size):
-                                for l, e in enumerate(E):
-                                    if i == 0:
-                                        rdm_iJ[i, i] += (n_i + 1) *\
-                                                   V[n_i, n_j, l] * V[n_i, n_j, l] *\
-                                                   np.exp(-e * beta)
-                                    else:
-                                        rdm_iJ[i, i] += (n_i + 1) *\
-                                                    V[n_j, n_i, l] * V[n_j, n_i, l] *\
-                                                    np.exp(-e * beta)
-
-                    #i!=j
-                    else:
-                        for n_i in range(1, basis_size):
-                            for n_j in range(basis_size-1):
-                                for l, e in enumerate(E):
-                                    if i == 0 and j == 1:
-                                        rdm_iJ[i, j] += np.sqrt(n_i) * np.sqrt(n_j+1) *\
-                                                    V[n_i-1, n_j+1, l] * V[n_i, n_j, l] *\
-                                                    np.exp(-e * beta)
-                                    elif i == 1 and j == 0:
-                                        rdm_iJ[i, j] += np.sqrt(n_i) * np.sqrt(n_j+1) *\
-                                                    V[n_j+1, n_i-1, l] * V[n_j, n_i, l] *\
-                                                    np.exp(-e * beta)
-            rdm_iJ /= Z
-            return rdm_iJ
-
-        def map_quasi_1_RDM(DM):
-            """map quasi 1-RDM from physical density matrices"""
-            RDM_1 = {}
-            RDM_1["a"] = DM[(1, 0)] / self.cosh_theta
-            RDM_1["b"] = DM[(0, 1)] / self.sinh_theta
-            return RDM_1
-
-        def map_quasi_2_RDM(DM):
-            """map quasi 2-RDM from physical densitry matrix"""
-            RDM_2 = {}
-            RDM_2["ab"] = DM["iJ"] / np.einsum('i,j->ij', self.cosh_theta, self.sinh_theta)
-            RDM_2["ba"] = DM["Ij"] / np.einsum('i,j->ij', self.sinh_theta, self.cosh_theta)
-            RDM_2["aa"] = DM[(2, 0)] / np.einsum('i,j->ij', self.cosh_theta, self.cosh_theta)
-            RDM_2["bb"] = DM[(0, 2)] / np.einsum('i,j->ij', self.sinh_theta, self.sinh_theta)
-            return RDM_2
-
-        def map_T_from_RDM(DM):
-            """map initial T amplitude from quasi particle density matrix"""
-            T = {}
-            T[1] = DM[1]
-            T[2] = DM[2] - np.einsum('i,j->ij', T[1], T[1])
-            # assert np.allclose(T[2], np.transpose(T[2]))
-            return T
-        beta_initial = 1. / (self.Kb * T_initial)
-        # calculation parttion function as normalization factor
-        Z = sum(np.exp(-beta_initial * self.E_val))
-
-        # reshape eigen vector
-        self.V_val = self.V_val.reshape([basis_size, basis_size, basis_size**self.N])
-
-        # initialize physical density matrix
-        DM_phys = {}
-        DM_phys[(1, 0)] = cal_rdm_I(self.E_val, self.V_val, Z, basis_size, beta_initial)
-        DM_phys[(0, 1)] = cal_rdm_i(self.E_val, self.V_val, Z, basis_size, beta_initial)
-        DM_phys['Ij'] = cal_rdm_Ij(self.E_val, self.V_val, Z, basis_size, beta_initial)
-        DM_phys['iJ'] = cal_rdm_iJ(self.E_val, self.V_val, Z, basis_size, beta_initial)
-        DM_phys[(2, 0)] = cal_rdm_IJ(self.E_val, self.V_val, Z, basis_size, beta_initial)
-        DM_phys[(0, 2)] = cal_rdm_ij(self.E_val, self.V_val, Z, basis_size, beta_initial)
-
-        print("Physical density matrix mapped from FCI:")
-        for block in DM_phys.keys():
-            print("{:}:\n{:}".format(block, DM_phys[block]))
-
-        # initial quasi density matrix
-        RDM_quasi = {}
-        RDM_quasi[1] = self.merge_linear(map_quasi_1_RDM(DM_phys))
-        RDM_quasi[2] = self.merge_quadratic(map_quasi_2_RDM(DM_phys))
-
-        print("Quasi particle density matrix mapped from FCI")
-        for block in RDM_quasi.keys():
-            print("{:}:\n{:}".format(block, RDM_quasi[block]))
-
-        # initial T amplitdue
-        T_initial = map_T_from_RDM(RDM_quasi)
-        T_initial[0] = np.log(Z)
-        print("initial T amplitude")
-        for block in T_initial.keys():
-            print("{:}:\n{:}".format(block, T_initial[block]))
-
-        return T_initial
-
-
     def CC_residue(self, H_args, T_args):
         """implement coupled cluster residue equations"""
         N = self.N
@@ -538,11 +207,21 @@ class vibronic_model_hamiltonian(object):
             R += H[(0, 0)]
 
             # linear
-            R += np.einsum('k,k->', H[(0, 1)], T[1])
+            R += np.einsum('k,k->', H[(0, 1)], T[(1, 0)])
 
             # quadratic
-            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[2])
-            R += 0.5 * np.einsum('kl,k,l->', H[(0, 2)], T[1], T[1])
+            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[(2, 0)])
+            R += 0.5 * np.einsum('kl,k,l->', H[(0, 2)], T[(1, 0)], T[(1, 0)])
+
+            # terms associated with thermal
+
+            # Linear
+            R += np.einsum('kl,lk->', H[(1, 1)], T[(1, 1)])
+            R += np.einsum('k,k->', H[(1, 0)], T[(0, 1)])
+            R += 0.5 * np.einsum('kl,kl->', H[(2, 0)], T[(0, 2)])
+            # quadratic
+            R += np.einsum('kl,k,l->', H[(1, 1)], T[(0, 1)], T[(1, 0)])
+            R += 0.5 * np.einsum('kl,k,l->', H[(2, 0)], T[(0, 1)], T[(0, 1)])
 
             return R
 
@@ -550,13 +229,25 @@ class vibronic_model_hamiltonian(object):
             """return residue R_I"""
 
             # initialize as zero
-            R = np.zeros(2*N)
+            R = np.zeros(N)
 
             # linear
             R += H[(0, 1)]
 
             # quadratic
-            R += np.einsum('ik,k->i', H[(0, 2)], T[1])
+            R += np.einsum('ik,k->i', H[(0, 2)], T[(1, 0)])
+
+            # terms associated with thermal
+
+            # Linear
+            R += np.einsum('ki,k->i', H[(1, 1)], T[(0, 1)])
+            R += np.einsum('k,ki->i', H[(1, 0)], T[(0, 2)])
+            R += np.einsum('k,ki->i', H[(0, 1)], T[(1, 1)])
+            # quadratic
+            R += np.einsum('lk,ki,l->i', H[(1, 1)], T[(1, 1)], T[0, 1])
+            R += np.einsum('lk,k,li->i', H[(1, 1)], T[(1, 0)], T[(0, 2)])
+            R += np.einsum('kl,k,li->i', H[(0, 2)], T[(1, 0)], T[(1, 1)])
+            R += np.einsum('kl,k,li->i', H[(2, 0)], T[(0, 1)], T[(0, 2)])
 
             return R
 
@@ -564,17 +255,28 @@ class vibronic_model_hamiltonian(object):
             """return residue R_i"""
 
             # initialize
-            R = np.zeros(2*N)
+            R = np.zeros(N)
 
             # non zero initial value of R
-            R += H[(1, 0)]
+            # R += H[(1, 0)]
 
             # linear
-            R += np.einsum('ki,k->i', H[(1, 1)], T[1])
+            # R += np.einsum('ik,k->i', H[(1, 1)], T[(1, 0)])
 
             # quadratic
-            R += np.einsum('k,ki->i', H[(0, 1)], T[2])
-            R += np.einsum('kl,k,li->i', H[(0, 2)], T[1], T[2])
+            R += np.einsum('k,ki->i', H[(0, 1)], T[(2, 0)])
+            R += np.einsum('kl,k,li->i', H[(0, 2)], T[(1, 0)], T[(2, 0)])
+
+            # terms associated with thermal
+
+            # linear
+            R += np.einsum('k,ik->i', H[(1, 0)], T[(1, 1)])
+            # R += np.einsum('ki,k->i', H[(2, 0)], T[(0, 1)])
+
+            # quadratic
+            R += np.einsum('lk,il,k->i', H[(1, 1)], T[(1, 1)], T[(1, 0)])
+            R += np.einsum('lk,l,ki->i', H[(1, 1)], T[(0, 1)], T[(2, 0)])
+            R += np.einsum('kl,k,il->i', H[(2, 0)], T[(0, 1)], T[(1, 1)])
 
             return R
 
@@ -582,13 +284,27 @@ class vibronic_model_hamiltonian(object):
             """return residue R_Ij"""
 
             # initialize
-            R = np.zeros([2*N, 2*N])
+            R = np.zeros([N, N])
 
             # first term
-            R += H[(1, 1)]
+            # R += H[(1, 1)]
 
             # quadratic
-            R += np.einsum('ik,kj->ij', H[(0, 2)], T[2])
+            # R += np.einsum('ik,kj->ij', H[(0, 2)], T[2, 0])
+
+            # terms associated with thermal
+
+            # linear
+            R += np.einsum('ik,kj->ij', H[(1, 1)], T[(1, 1)])
+            R += np.einsum('jk,ik->ij', H[(2, 0)], T[(0, 2)])
+
+            # quadratic
+            R += np.einsum('lk,kj,il->ij', H[(1, 1)], T[(1, 1)], T[(1, 1)])
+            R += np.einsum('kl,kj,li->ij', H[(1, 1)], T[(0, 2)], T[(2, 0)])
+            R += np.einsum('kl,lj,ik->ij', H[(2, 0)], T[(0, 2)], T[(1, 1)])
+            R += np.einsum('kl,li,kj->ij', H[(0, 2)], T[(2, 0)], T[(1, 1)])
+
+
 
             return R
 
@@ -596,26 +312,52 @@ class vibronic_model_hamiltonian(object):
             """return residue R_IJ"""
 
             # initialize as zero
-            R = np.zeros([2*N, 2*N])
+            R = np.zeros([N, N])
 
             # quadratic
-            R += H[(0, 2)]
+            # R += H[(0, 2)]
+
+            # terms associated with thermal
+
+            R += np.einsum('lk,kj,li->ij', H[(1, 1)], T[(1, 1)], T[(0, 2)])
+
+
+            R += np.einsum('lk,ki,lj->ij', H[(1, 1)], T[(1, 1)], T[(0, 2)])
+
+
+            R += np.einsum('kl,lj,ki->ij', H[(2, 0)], T[(0, 2)], T[(0, 2)])
+
+
+            R += np.einsum('kl,ki,lj->ij', H[(0, 2)], T[(1, 1)], T[(1, 1)])
+
+
             return R
 
         def f_t_ij(H, T):
             """return residue R_ij"""
 
             # # initialize as zero
-            R = np.zeros([2*N, 2*N])
+            R = np.zeros([N, N])
 
             # if self.hamiltonian_truncation_order >= 2:
 
             # quadratic
             R += H[(2, 0)]  # h term
-            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
-            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
-            R += 0.5 * np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2], T[2])
-            R += 0.5 * np.einsum('kl,kj,li->ij', H[(0, 2)], T[2], T[2])
+            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2, 0])
+            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2, 0])
+            R += np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2, 0], T[2, 0])
+
+            # terms associated with thermal
+
+            # linear
+            R += np.einsum('jk,ik->ij', H[(2, 0)], T[(1, 1)])
+            R += np.einsum('ik,jk->ij', H[(2, 0)], T[(1, 1)])
+
+            # quadratic
+            R += np.einsum('lk,ki,jl->ij', H[(1, 1)], T[(2, 0)], T[(1, 1)])
+            R += np.einsum('lk,kj,il->ij', H[(1, 1)], T[(2, 0)], T[(1, 1)])
+            R += np.einsum('kl,ik,jl->ij', H[(2, 0)], T[(1, 1)], T[(1, 1)])
+
             return R
 
         # compute similarity transformed Hamiltonian over e^T
@@ -639,7 +381,7 @@ class vibronic_model_hamiltonian(object):
         """conduct TFCC imaginary time integration to calculation thermal properties"""
         # map initial T amplitude
         if compare_with_FCI:
-            T_amplitude = self._map_initial_T_amplitude_from_FCI(T_initial=T_initial)
+            T_amplitude = self._map_initial_T_amplitude(T_initial=T_initial)
 
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
