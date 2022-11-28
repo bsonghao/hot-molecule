@@ -52,8 +52,8 @@ class vibronic_model_hamiltonian(object):
         # constant
         self.H[(0, 0)] = VE + 0.5 * np.trace(QCP) + 0.5 * sum(freq)
         # first order
-        self.H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
-        self.H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N)
+        self.H[(1, 0)] = LCP / np.sqrt(2)
+        self.H[(0, 1)] = LCP / np.sqrt(2)
         # second order
         self.H[(1, 1)] = np.diag(freq)
         self.H[(1, 1)] += QCP
@@ -162,10 +162,16 @@ class vibronic_model_hamiltonian(object):
             z = 1
             for i,w in enumerate(self.Freq):
                 z *= 1 / (1 - np.exp(-beta * w))
-            z *= np.exp(-beta * self.H[(0, 0)])
+            z *= np.exp(-beta * (self.H[(0, 0)]-sum(self.LCP**2 / self.Freq)/2.))
             t_0 = np.log(z)
             return t_0
-        def map_t11_amplitude(beta):
+
+        def map_t_1_amplitude():
+            """map initial t_1 and t^1 amplitude from linear displacements"""
+            t_i = -self.LCP / np.sqrt(2) / 2 / self.Freq
+            t_I = -self.LCP / np.sqrt(2) / 2 / self.Freq
+            return t_i, t_I
+        def map_t11_amplitude(beta, t_i, t_I):
             """map t_11 amplitude from Bose-Einstein occupation number"""
             # initialize t1 amplitude
 
@@ -173,20 +179,28 @@ class vibronic_model_hamiltonian(object):
             for i in range(N):
                 t_11[i, i] = 1 / (np.exp(beta * self.Freq[i]) - 1)
 
+            t_11 -= np.einsum('i,j->ij', t_i, t_I)
+
             return t_11
 
         N = self.N
         beta_initial = 1. / (self.Kb * T_initial)
 
+        # map linear amplitude
+        t_i, t_I = map_t_1_amplitude()
+
         initial_T_amplitude = {}
 
-        # initial (0 ,0) and (1, 1) from high T limit of BE statistics
+        # initialiae (1, 0) and (0, 1) amplitude from linear displacements
+        initial_T_amplitude[(1, 0)] = t_I
+        initial_T_amplitude[(0, 1)] = t_i
+        # initialize (0 ,0) and (1, 1) amplitude from high T limit of BE statistics
         initial_T_amplitude[(0, 0)] = map_t_0_amplitude(beta_initial)
-        initial_T_amplitude[(1, 1)] = map_t11_amplitude(beta_initial)
+        initial_T_amplitude[(1, 1)] = map_t11_amplitude(beta_initial, t_i, t_I)
 
         # initialize the rest of T amplitudes to be zeros
-        initial_T_amplitude[(0, 1)] = np.zeros(N)
-        initial_T_amplitude[(1, 0)] = np.zeros(N)
+        # initial_T_amplitude[(0, 1)] = np.zeros(N)
+        # initial_T_amplitude[(1, 0)] = np.zeros(N)
         initial_T_amplitude[(2, 0)] = np.zeros([N, N])
         initial_T_amplitude[(0, 2)] = np.zeros([N, N])
 
