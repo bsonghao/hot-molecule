@@ -33,15 +33,15 @@ def main():
 
     # quadratic coupling constant
     QCP = np.array([[0.030, 0.001],
-                    [0.001, 0.040]])
+                    [0.001, 0.040]]) * 0
 
     # frequancies (in eV)
     Freq = np.array([0.15, 0.20])
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, num_mode)
-    model.TFCC_integration(T_initial=1e5, T_final=100, N=100000, output_path=outputdir)
-    model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=10000, T_final=100, N=10000)
+    model.TFCC_integration(T_initial=1e4, T_final=100, N=10000, output_path=outputdir)
+    model.sum_over_states(basis_size=80, output_path=outputdir, T_initial=10000, T_final=100, N=10000, compare_with_TNOE=False)
 
     # model.sum_over_states(basis_size=40, output_path=outputdir, compare_with_TFCC=False, T_grid=np.linspace(100, 10000, 10000))
     # model._map_initial_T_amplitude_from_FCI(T_initial=1000, basis_size=10)

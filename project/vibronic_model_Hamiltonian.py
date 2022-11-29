@@ -70,7 +70,7 @@ class vibronic_model_hamiltonian(object):
 
         print("### End of Hamiltonian parameters ####")
 
-    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N=10000):
+    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N=10000, compare_with_TNOE=False):
         """calculation thermal properties through sum over states"""
         def construct_full_Hamitonian():
             """construct full Hamiltonian in H.O. basis"""
@@ -121,7 +121,6 @@ class vibronic_model_hamiltonian(object):
             energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
-        compare_with_TNOE = True
         if compare_with_TNOE:
             T_grid = self.temperature_grid
         else:
@@ -168,8 +167,8 @@ class vibronic_model_hamiltonian(object):
 
         def map_t_1_amplitude():
             """map initial t_1 and t^1 amplitude from linear displacements"""
-            t_i = -self.LCP / np.sqrt(2) / 2 / self.Freq
-            t_I = -self.LCP / np.sqrt(2) / 2 / self.Freq
+            t_i = -self.LCP / np.sqrt(2) / self.Freq
+            t_I = -self.LCP / np.sqrt(2) / self.Freq
             return t_i, t_I
         def map_t11_amplitude(beta, t_i, t_I):
             """map t_11 amplitude from Bose-Einstein occupation number"""
@@ -178,9 +177,7 @@ class vibronic_model_hamiltonian(object):
             t_11 = np.zeros([N, N])
             for i in range(N):
                 t_11[i, i] = 1 / (np.exp(beta * self.Freq[i]) - 1)
-
-            t_11 -= np.einsum('i,j->ij', t_i, t_I)
-
+            
             return t_11
 
         N = self.N
@@ -199,8 +196,6 @@ class vibronic_model_hamiltonian(object):
         initial_T_amplitude[(1, 1)] = map_t11_amplitude(beta_initial, t_i, t_I)
 
         # initialize the rest of T amplitudes to be zeros
-        # initial_T_amplitude[(0, 1)] = np.zeros(N)
-        # initial_T_amplitude[(1, 0)] = np.zeros(N)
         initial_T_amplitude[(2, 0)] = np.zeros([N, N])
         initial_T_amplitude[(0, 2)] = np.zeros([N, N])
 
