@@ -20,6 +20,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import parse  # used for loading data files
 import pandas as pd
+import itertools as it
+
 #
 import opt_einsum as oe
 
@@ -27,12 +29,11 @@ import opt_einsum as oe
 class vibronic_model_hamiltonian(object):
     """ vibronic model hamiltonian class implement TNOE approach to simulation thermal properties of vibronic models. """
 
-    def __init__(self, freq, LCP, QCP, VE, num_mode, num_surf):
+    def __init__(self, freq, LCP, VE, num_mode, num_surf):
         """ initialize hamiltonian parameters:
         freq: vibrational frequencies
         LCP: linear coupling_constants
-        QCP: quadratic coupling constant
-        VE" vertical energy
+        VE: vertical energy
         num_mode: number of vibrational modes
         num_surf: number of electronic surfaces
         """
@@ -42,7 +43,6 @@ class vibronic_model_hamiltonian(object):
         self.N = num_mode
         self.Freq = freq
         self.LCP = LCP
-        self.QCP = QCP
         self.VE = VE
 
         # Boltzmann constant (eV K-1)
@@ -54,22 +54,30 @@ class vibronic_model_hamiltonian(object):
         # constant
         self.H[(0, 0)] = np.zeros([self.A, self.A])
         for i in range(self.A):
-            self.H[(0, 0)][i, i] = VE[i][i] + 0.5 * sum(freq)
-        VE + 0.5 * np.trace(QCP) + 0.5 * sum(freq)
+            self.H[(0, 0)][i, i] = VE[i, i] + 0.5 * sum(freq)
         # first order
-        self.H[(1, 0)] = LCP / np.sqrt(2)
-        self.H[(0, 1)] = LCP / np.sqrt(2)
+        self.H[(1, 0)] = np.array(LCP).transpose(1, 2, 0) / np.sqrt(2)
+        self.H[(0, 1)] = np.array(LCP).transpose(1, 2, 0) / np.sqrt(2)
         # second order
-        self.H[(1, 1)] = np.diag(freq)
-        self.H[(1, 1)] += QCP
 
-        self.H[(2, 0)] = QCP / 2
-        self.H[(0, 2)] = QCP / 2
+        self.H[(1, 1)] = np.zeros([self.A, self.A, self.N, self.N])
+        for a in range(self.A):
+            for i in range(self.N):
+                self.H[(1, 1)][a, a, i, i] = freq[i]
+
+        self.H[(2, 0)] = np.zeros([self.A, self.A, self.N, self.N])
+        self.H[(0, 2)] = np.zeros([self.A, self.A, self.N, self.N])
 
         print("number of vibrational mode {:}".format(self.N))
         print("##### Hamiltonian parameters ######")
         for rank in self.H.keys():
-            print("Block {:}: \n {:}".format(rank, self.H[rank]))
+            print("Block {:}:".format(rank))
+            if rank != (0, 0):
+                for a, b in it.product(range(self.A), repeat=2):
+                    print("surface ({:}, {:}):\n{:}".format(a, b, self.H[rank][a, b, :]))
+            else:
+                print(self.H[rank])
+
 
         print("Boltzmann constant: {:} eV K-1".format(self.Kb))
 
@@ -77,44 +85,64 @@ class vibronic_model_hamiltonian(object):
 
     def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N=10000, compare_with_TNOE=False):
         """calculation thermal properties through sum over states"""
-        def construct_full_Hamitonian():
-            """construct full Hamiltonian in H.O. basis"""
+        A, N = self.A, self.N
+        def _construct_vibrational_Hamitonian(h):
+            """construct vibrational Hamiltonian in H.O. basis"""
             Hamiltonian = np.zeros((basis_size, basis_size, basis_size, basis_size))
             for a_1 in range(basis_size):
                 for a_2 in range(basis_size):
                     for b_1 in range(basis_size):
                         for b_2 in range(basis_size):
                             if a_1 == b_1 and a_2 == b_2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 0)]
-                                Hamiltonian[a_1, a_2, b_1, b_2] += self.H[(1, 1)][0, 0]*(b_1)+self.H[(1, 1)][1, 1]*(b_2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 0)]
+                                Hamiltonian[a_1, a_2, b_1, b_2] += h[(1, 1)][0, 0]*(b_1)+h[(1, 1)][1, 1]*(b_2)
                             if a_1 == b_1+1 and a_2 == b_2-1:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 1)][0, 1]*np.sqrt(b_1+1)*np.sqrt(b_2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 1)][0, 1]*np.sqrt(b_1+1)*np.sqrt(b_2)
                             if a_1 == b_1-1 and a_2 == b_2+1:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 1)][1, 0]*np.sqrt(b_1)*np.sqrt(b_2+1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 1)][1, 0]*np.sqrt(b_1)*np.sqrt(b_2+1)
                             if a_1 == b_1+1 and a_2 == b_2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 0)][0]*np.sqrt(b_1+1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 0)][0]*np.sqrt(b_1+1)
                             if a_1 == b_1 and a_2 == b_2+1:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 0)][1]*np.sqrt(b_2+1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 0)][1]*np.sqrt(b_2+1)
                             if a_1 == b_1-1 and a_2 == b_2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 1)][0]*np.sqrt(b_1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 1)][0]*np.sqrt(b_1)
                             if a_1 == b_1 and a_2 == b_2-1:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 1)][1]*np.sqrt(b_2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 1)][1]*np.sqrt(b_2)
                             if a_1 == b_1+2 and a_2 == b_2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][0, 0]*np.sqrt(b_1+1)*np.sqrt(b_1+2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(2, 0)][0, 0]*np.sqrt(b_1+1)*np.sqrt(b_1+2)
                             if a_1 == b_1+1 and a_2 == b_2+1:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(2, 0)][0, 1] + self.H[(2, 0)][1, 0])*np.sqrt(b_1+1)*np.sqrt(b_2+1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (h[(2, 0)][0, 1] + h[(2, 0)][1, 0])*np.sqrt(b_1+1)*np.sqrt(b_2+1)
                             if a_1 == b_1 and a_2 == b_2+2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][1, 1]*np.sqrt(b_2+1)*np.sqrt(b_2+2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(2, 0)][1, 1]*np.sqrt(b_2+1)*np.sqrt(b_2+2)
                             if a_1 == b_1-2 and a_2 == b_2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][0, 0]*np.sqrt(b_1)*np.sqrt(b_1-1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 2)][0, 0]*np.sqrt(b_1)*np.sqrt(b_1-1)
                             if a_1 == b_1-1 and a_2 == b_2-1:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(0, 2)][0, 1] + self.H[(0, 2)][1, 0])*np.sqrt(b_1)*np.sqrt(b_2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (h[(0, 2)][0, 1] + h[(0, 2)][1, 0])*np.sqrt(b_1)*np.sqrt(b_2)
                             if a_1 == b_1 and a_2 == b_2-2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][1, 1]*np.sqrt(b_2)*np.sqrt(b_2-1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 2)][1, 1]*np.sqrt(b_2)*np.sqrt(b_2-1)
 
-            Hamiltonian = Hamiltonian.reshape(basis_size**self.N, basis_size**self.N)
+            Hamiltonian = Hamiltonian.reshape(basis_size**N, basis_size**N)
 
             return Hamiltonian
+
+        def construct_full_Hamitonian():
+            """contruction the full vibronic Hamiltonian in FCI H.O. basis"""
+            # initialize the Hamiltonian
+            H_FCI = np.zeros([A, basis_size**N, A, basis_size**N])
+            # contruction the full Hamiltonian surface by surface
+            for a, b in it.product(range(A), repeat=2):
+                h = {}
+                for block in self.H.keys():
+                    if block != (0, 0):
+                        h[block] = self.H[block][a, b, :]
+                    else:
+                        h[block] = self.H[block][a, b]
+                        
+                H_FCI[a, :, b][:] += _construct_vibrational_Hamitonian(h)
+
+            H_FCI = H_FCI.reshape(A*basis_size**N, A*basis_size**N)
+
+            return H_FCI
 
         def Cal_partition_function(E, T):
             """ compute partition function """
