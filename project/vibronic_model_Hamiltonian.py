@@ -25,18 +25,20 @@ import opt_einsum as oe
 
 
 class vibronic_model_hamiltonian(object):
-    """ vibronic model hamiltonian class implement TF-VECC approach to simulation thermal properties of vibronic models. """
+    """ vibronic model hamiltonian class implement TNOE approach to simulation thermal properties of vibronic models. """
 
-    def __init__(self, freq, LCP, QCP, VE, num_mode):
+    def __init__(self, freq, LCP, QCP, VE, num_mode, num_surf):
         """ initialize hamiltonian parameters:
         freq: vibrational frequencies
         LCP: linear coupling_constants
         QCP: quadratic coupling constant
         VE" vertical energy
-        num_mode: number of vibration modes
+        num_mode: number of vibrational modes
+        num_surf: number of electronic surfaces
         """
 
         # initialize the Hamiltonian parameters as object instances
+        self.A = num_surf
         self.N = num_mode
         self.Freq = freq
         self.LCP = LCP
@@ -50,7 +52,10 @@ class vibronic_model_hamiltonian(object):
         # and we represent the Hamitlnian in the form of second quantization
         self.H = dict()
         # constant
-        self.H[(0, 0)] = VE + 0.5 * np.trace(QCP) + 0.5 * sum(freq)
+        self.H[(0, 0)] = np.zeros([self.A, self.A])
+        for i in range(self.A):
+            self.H[(0, 0)][i, i] = VE[i][i] + 0.5 * sum(freq)
+        VE + 0.5 * np.trace(QCP) + 0.5 * sum(freq)
         # first order
         self.H[(1, 0)] = LCP / np.sqrt(2)
         self.H[(0, 1)] = LCP / np.sqrt(2)
@@ -177,7 +182,7 @@ class vibronic_model_hamiltonian(object):
             t_11 = np.zeros([N, N])
             for i in range(N):
                 t_11[i, i] = 1 / (np.exp(beta * self.Freq[i]) - 1)
-            
+
             return t_11
 
         N = self.N
