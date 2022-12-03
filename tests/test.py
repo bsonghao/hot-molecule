@@ -44,8 +44,6 @@ def main():
     name = "displaced_6.json"
 
     num_mode, num_surf, VE, Freq, LCP = read_in_model(inputdir, name)
-    num_mode = 2
-    num_surf = 2
 
     print("number of surfaces:{:}".format(num_surf))
     print("number of modes:{:}".format(num_mode))
@@ -57,7 +55,7 @@ def main():
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, VE, num_mode, num_surf)
     # model.TFCC_integration(T_initial=1e5, T_final=100, N=10000, output_path=outputdir)
-    model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=10000, T_final = 100, N=10000, compare_with_TNOE=False)
+    model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=1000, T_final=10, N_step=10000, compare_with_TNOE=False)
 
     # model.sum_over_states(basis_size=40, output_path=outputdir, compare_with_TFCC=False, T_grid=np.linspace(100, 10000, 10000))
     # model._map_initial_T_amplitude_from_FCI(T_initial=1000, basis_size=10)

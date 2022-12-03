@@ -83,7 +83,7 @@ class vibronic_model_hamiltonian(object):
 
         print("### End of Hamiltonian parameters ####")
 
-    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N=10000, compare_with_TNOE=False):
+    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N_step=10000, compare_with_TNOE=False):
         """calculation thermal properties through sum over states"""
         A, N = self.A, self.N
         def _construct_vibrational_Hamitonian(h):
@@ -137,7 +137,7 @@ class vibronic_model_hamiltonian(object):
                         h[block] = self.H[block][a, b, :]
                     else:
                         h[block] = self.H[block][a, b]
-                        
+
                 H_FCI[a, :, b][:] += _construct_vibrational_Hamitonian(h)
 
             H_FCI = H_FCI.reshape(A*basis_size**N, A*basis_size**N)
@@ -159,8 +159,7 @@ class vibronic_model_hamiltonian(object):
         else:
             beta_initial = 1. / (T_initial * self.Kb)
             beta_final = 1. / (T_final * self.Kb)
-            T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N))
-
+            T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N_step))
         # contruct Hamiltonian in H.O. basis
         H = construct_full_Hamitonian()
         # check Hermicity of the Hamitonian in H. O. basis
