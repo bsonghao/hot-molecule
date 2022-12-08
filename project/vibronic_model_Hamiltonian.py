@@ -186,33 +186,37 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def _map_initial_T_amplitude(self, T_initial=1000):
+    def _map_initial_amplitude(self, T_initial=1000):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
-        def map_t_0_amplitude(beta):
+        def map_z_0_amplitude(beta):
             """map t_0 amplitude from H.O. partition function"""
-            z = 1
-            for i,w in enumerate(self.Freq):
-                z *= 1 / (1 - np.exp(-beta * w))
-            z *= np.exp(-beta * (self.H[(0, 0)]-sum(self.LCP**2 / self.Freq)/2.))
-            t_0 = np.log(z)
-            return t_0
+            z_0 = np.eye(A)
+            for a in range(A):
+                for i in range(N):
+                    z_0[a, a] *= 1 / (1 - np.exp(-beta * self.Freq[i]))
+                z_0[a, a] *= np.exp(-beta*(self.H[(0, 0)][a, a]-sum(self.H[(1, 0)][a, a, :]**2 / self.Freq)))
+
+            return z_0
 
         def map_t_1_amplitude():
             """map initial t_1 and t^1 amplitude from linear displacements"""
-            t_i = -self.LCP / np.sqrt(2) / self.Freq
-            t_I = -self.LCP / np.sqrt(2) / self.Freq
+            # initialzie t_i and t_I tensors
+            t_i = np.zeros([A, N])
+            t_I = np.zeros([A, N])
+            for a in range(A):
+                t_i[a, :] = -self.H[(0, 1)][a, a, :] / self.Freq
+                t_I[a, :] = -self.H[(1, 0)][a, a, :] / self.Freq
+
             return t_i, t_I
-        def map_t11_amplitude(beta, t_i, t_I):
+        def map_t11_amplitude(beta):
             """map t_11 amplitude from Bose-Einstein occupation number"""
-            # initialize t1 amplitude
-
-            t_11 = np.zeros([N, N])
-            for i in range(N):
-                t_11[i, i] = 1 / (np.exp(beta * self.Freq[i]) - 1)
-
+            # initialize t11 amplitude
+            t_11 = np.zeros([A, N, N])
+            for a, i in it.product(range(A), range(N)):
+                t_11[a, i, i] = 1 / (np.exp(beta * self.Freq[i]) - 1)
             return t_11
 
-        N = self.N
+        N, A = self.N, self.A
         beta_initial = 1. / (self.Kb * T_initial)
 
         # map linear amplitude
@@ -220,25 +224,40 @@ class vibronic_model_hamiltonian(object):
 
         initial_T_amplitude = {}
 
-        # initialiae (1, 0) and (0, 1) amplitude from linear displacements
+        # initialize (1, 0) and (0, 1) T amplitude from linear displacements
         initial_T_amplitude[(1, 0)] = t_I
         initial_T_amplitude[(0, 1)] = t_i
-        # initialize (0 ,0) and (1, 1) amplitude from high T limit of BE statistics
-        initial_T_amplitude[(0, 0)] = map_t_0_amplitude(beta_initial)
-        initial_T_amplitude[(1, 1)] = map_t11_amplitude(beta_initial, t_i, t_I)
+        # initialize (0 ,0) and (1, 1) T amplitude from high T limit of BE statistics
+        initial_T_amplitude[(1, 1)] = map_t11_amplitude(beta_initial)
 
         # initialize the rest of T amplitudes to be zeros
-        initial_T_amplitude[(2, 0)] = np.zeros([N, N])
-        initial_T_amplitude[(0, 2)] = np.zeros([N, N])
+        initial_T_amplitude[(2, 0)] = np.zeros([A, N, N])
+        initial_T_amplitude[(0, 2)] = np.zeros([A, N, N])
 
+        initial_Z_amplitude = {}
+
+        # initialize (0, 0) block of the Z amplitude from D.H.O
+        initial_Z_amplitude[(0, 0)] = map_z_0_amplitude(beta_initial)
+
+        # initializae rest of the Z amplitude to be zeros
+        initial_Z_amplitude[(1, 0)] = np.zeros([A, A, N])
+        initial_Z_amplitude[(0, 1)] = np.zeros([A, A, N])
+
+        initial_Z_amplitude[(1, 1)] = np.zeros([A, A, N, N])
+        initial_Z_amplitude[(2, 0)] = np.zeros([A, A, N, N])
+        initial_Z_amplitude[(0, 2)] = np.zeros([A, A, N, N])
 
         print("### initialize T amplitude ###")
         for block in initial_T_amplitude.keys():
             print("Block:{:}\n{:}".format(block, initial_T_amplitude[block]))
 
-        print("### T amplitude initialized successfully! ###")
+        print("### initialize Z amplitude ###")
+        for block in initial_Z_amplitude.keys():
+            print("Block:{:}\n{:}".format(block, initial_Z_amplitude[block]))
 
-        return initial_T_amplitude
+        print("###  T and Z amplitude initialized successfully! ###")
+
+        return initial_T_amplitude, initial_Z_amplitude
 
     def CC_residue(self, H_args, T_args):
         """implement coupled cluster residue equations"""
