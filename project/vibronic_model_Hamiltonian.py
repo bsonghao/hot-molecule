@@ -177,7 +177,7 @@ class vibronic_model_hamiltonian(object):
             t_11 = np.zeros([N, N])
             for i in range(N):
                 t_11[i, i] = 1 / (np.exp(beta * self.Freq[i]) - 1)
-            
+
             return t_11
 
         N = self.N
@@ -213,7 +213,7 @@ class vibronic_model_hamiltonian(object):
         N = self.N
 
         def f_t_0(H, T):
-            """return residue R_0"""
+            """return residue R_0: (0, 0) block"""
 
             # initialize as zero
             R = 0.
@@ -240,22 +240,22 @@ class vibronic_model_hamiltonian(object):
 
             return R
 
-        def f_t_I(H, T):
-            """return residue R_I"""
+        def f_t_i(H, T):
+            """return residue R_I: (0, 1) block"""
 
             # initialize as zero
             R = np.zeros(N)
 
             # linear
-            R += H[(0, 1)]
+            # R += H[(0, 1)]
 
             # quadratic
-            R += np.einsum('ik,k->i', H[(0, 2)], T[(1, 0)])
+            # R += np.einsum('ik,k->i', H[(0, 2)], T[(1, 0)])
 
             # terms associated with thermal
 
             # Linear
-            R += np.einsum('ki,k->i', H[(1, 1)], T[(0, 1)])
+            # R += np.einsum('ki,k->i', H[(1, 1)], T[(0, 1)])
             R += np.einsum('k,ki->i', H[(1, 0)], T[(0, 2)])
             R += np.einsum('k,ki->i', H[(0, 1)], T[(1, 1)])
             # quadratic
@@ -266,17 +266,17 @@ class vibronic_model_hamiltonian(object):
 
             return R
 
-        def f_t_i(H, T):
-            """return residue R_i"""
+        def f_t_I(H, T):
+            """return residue R_i: (1, 0) block"""
 
             # initialize
             R = np.zeros(N)
 
             # non zero initial value of R
-            # R += H[(1, 0)]
+            R += H[(1, 0)]
 
             # linear
-            # R += np.einsum('ik,k->i', H[(1, 1)], T[(1, 0)])
+            R += np.einsum('ik,k->i', H[(1, 1)], T[(1, 0)])
 
             # quadratic
             R += np.einsum('k,ki->i', H[(0, 1)], T[(2, 0)])
@@ -286,7 +286,7 @@ class vibronic_model_hamiltonian(object):
 
             # linear
             R += np.einsum('k,ik->i', H[(1, 0)], T[(1, 1)])
-            # R += np.einsum('ki,k->i', H[(2, 0)], T[(0, 1)])
+            R += np.einsum('ki,k->i', H[(2, 0)], T[(0, 1)])
 
             # quadratic
             R += np.einsum('lk,il,k->i', H[(1, 1)], T[(1, 1)], T[(1, 0)])
@@ -296,7 +296,7 @@ class vibronic_model_hamiltonian(object):
             return R
 
         def f_t_Ij(H, T):
-            """return residue R_Ij"""
+            """return residue R_Ij: (1, 1) block"""
 
             # initialize
             R = np.zeros([N, N])
@@ -305,13 +305,14 @@ class vibronic_model_hamiltonian(object):
             # R += H[(1, 1)]
 
             # quadratic
-            # R += np.einsum('ik,kj->ij', H[(0, 2)], T[2, 0])
+            R += np.einsum('ik,kj->ij', H[(0, 2)], T[2, 0])
 
             # terms associated with thermal
 
             # linear
+            # R += np.einsum('kj,ik->ij', H[(1, 1)], T[(1, 1)])
             R += np.einsum('ik,kj->ij', H[(1, 1)], T[(1, 1)])
-            R += np.einsum('jk,ik->ij', H[(2, 0)], T[(0, 2)])
+            # R += np.einsum('jk,ik->ij', H[(2, 0)], T[(0, 2)])
 
             # quadratic
             R += np.einsum('lk,kj,il->ij', H[(1, 1)], T[(1, 1)], T[(1, 1)])
@@ -323,8 +324,8 @@ class vibronic_model_hamiltonian(object):
 
             return R
 
-        def f_t_IJ(H, T):
-            """return residue R_IJ"""
+        def f_t_ij(H, T):
+            """return residue R_IJ: (0, 2) block"""
 
             # initialize as zero
             R = np.zeros([N, N])
@@ -334,22 +335,21 @@ class vibronic_model_hamiltonian(object):
 
             # terms associated with thermal
 
+            # R += np.einsum('ki,kj->ij', H[(1, 1)], T[(0, 2)])
+            # R += np.einsum('kj,ki->ij', H[(1, 1)], T[(0, 2)])
+            # R += np.einsum('ki,kj->ij', H[(0, 2)], T[(1, 1)])
+            # R += np.einsum('kj,ki->ij', H[(0, 2)], T[(1, 1)])
+
             R += np.einsum('lk,kj,li->ij', H[(1, 1)], T[(1, 1)], T[(0, 2)])
-
-
             R += np.einsum('lk,ki,lj->ij', H[(1, 1)], T[(1, 1)], T[(0, 2)])
-
-
             R += np.einsum('kl,lj,ki->ij', H[(2, 0)], T[(0, 2)], T[(0, 2)])
-
-
             R += np.einsum('kl,ki,lj->ij', H[(0, 2)], T[(1, 1)], T[(1, 1)])
 
 
             return R
 
-        def f_t_ij(H, T):
-            """return residue R_ij"""
+        def f_t_IJ(H, T):
+            """return residue R_ij: (2, 0) block"""
 
             # # initialize as zero
             R = np.zeros([N, N])
@@ -387,12 +387,12 @@ class vibronic_model_hamiltonian(object):
         residue = dict()
 
         residue[(0, 0)] = f_t_0(H_args, T_args)
-        residue[(1, 0)] = f_t_i(H_args, T_args)
-        residue[(2, 0)] = f_t_ij(H_args, T_args)
+        residue[(0, 1)] = f_t_i(H_args, T_args)
+        residue[(0, 2)] = f_t_ij(H_args, T_args)
 
         residue[(1, 1)] = f_t_Ij(H_args, T_args)
-        residue[(0, 1)] = f_t_I(H_args, T_args)
-        residue[(0, 2)] = f_t_IJ(H_args, T_args)
+        residue[(1, 0)] = f_t_I(H_args, T_args)
+        residue[(2, 0)] = f_t_IJ(H_args, T_args)
 
         return residue
 
