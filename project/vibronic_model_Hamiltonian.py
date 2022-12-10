@@ -305,7 +305,7 @@ class vibronic_model_hamiltonian(object):
             # R += H[(1, 1)]
 
             # quadratic
-            R += np.einsum('ik,kj->ij', H[(0, 2)], T[2, 0])
+            R += np.einsum('jk,ki->ij', H[(0, 2)], T[2, 0])
 
             # terms associated with thermal
 
@@ -358,8 +358,8 @@ class vibronic_model_hamiltonian(object):
 
             # quadratic
             R += H[(2, 0)]  # h term
-            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2, 0])
-            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2, 0])
+            R += np.einsum('jk,ki->ij', H[(1, 1)], T[2, 0])
+            R += np.einsum('ik,kj->ij', H[(1, 1)], T[2, 0])
             R += np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2, 0], T[2, 0])
 
             # terms associated with thermal
