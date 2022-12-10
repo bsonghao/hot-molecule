@@ -571,22 +571,89 @@ class vibronic_model_hamiltonian(object):
 
     def cal_T_Z_residual(self, T_args, Z_args):
         """calculation T and Z residual"""
-
-        def cal_T_residual(H_args, Z_args):
+        N = self.N
+        def cal_T_residual(R_args, Z_args):
             """calculation T residual from Ehrenfest parameterization"""
+            def cal_dT_i():
+                """(0, 1) block of T residual"""
+                R = np.einsum('a,ai->i', Z_args[(0, 0)], R_args[(0, 1)]) / np.einsum('a,a->', Z_args[(0, 0)], Z_args[(0, 0)])
+                return R
+
+            def cal_dT_I():
+                """(1, 0) block of T residual"""
+                R = np.einsum('a,ai->i', Z_args[(0, 0)], R_args[(1, 0)]) / np.einsum('a,a->', Z_args[(0, 0)], Z_args[(0, 0)])
+                return R
+
+            def cal_dT_Ij():
+                """(1, 1) block of T residual"""
+                R = np.einsum('a,aij->ij', Z_args[(0, 0)], R_args[(1, 1)]) / np.einsum('a,a->', Z_args[(0, 0)], Z_args[(0, 0)])
+                return R
+
+            residual = {}
+            residual[(0, 1)] = cal_dT_i()
+            residual[(1, 0)] = cal_dT_I()
+            residual[(1, 0)] = cal_dT_Ij()
+
             return residual
 
-        def cal_Z_residual(R_args, dT_args):
+        def cal_Z_residual(R_args, Z_args, dT_args):
             """calculation Z residual by strustracting T residual from the net residual"""
+            def cal_dZ_0():
+                """(0, 0) block of Z residual"""
+                R = R_args[(0, 0)]
+                return R
+
+            def cal_dZ_i():
+                """(0, 1) block of Z residual"""
+                R = R_args[(0, 1)]
+                R -= np.einsum('i,a->ai', dT_args[(0, 1)], Z_args[(0, 0)])
+                return R
+
+            def cal_dZ_I():
+                """(1, 0) block of Z residual"""
+                R = R_args[(1, 0)]
+                R -= np.einsum('i,a->ai', dT_args[(1, 0)], Z_args[(0, 0)])
+                return R
+
+            def cal_dZ_Ij():
+                """(1, 1) block of Z residual"""
+                R = R_args[(1, 1)]
+                R -= np.einsum('ij,a->aij', dT_args[(1, 1)], Z_args[(0, 0)])
+                R -= np.einsum('i,aj->aij', dT_args[(1, 0)], Z_args[(0, 1)])
+                R -= np.einsum('j,ai->aij', dT_args[(0, 1)], Z_args[(1, 0)])
+                return R
+
+            def cal_dZ_ij():
+                """(0, 2) block of Z residual"""
+                R = R_args[(0, 2)]
+                R -= np.einsum('i,aj->aij', dT_args[(0, 1)], Z_args[(0, 1)])
+                R -= np.einsum('j,ai->aij', dT_args[(0, 1)], Z_args[(0, 1)])
+                return R
+
+            def cal_dZ_IJ():
+                """(2, 0) block of Z residual"""
+                R = R_args[(2, 0)]
+                R -= np.einsum('i,aj->aij', dT_args[(1, 0)], Z_args[(1, 0)])
+                R -= np.einsum('j,ai->aij', dT_args[(1, 0)], Z_args[(1, 0)])
+                return R
+
+            residual = {}
+            residual[(0, 0)] = cal_dZ_0()
+            residual[(1, 0)] = cal_dZ_I()
+            residual[(0, 1)] = cal_dZ_i()
+            residual[(1, 1)] = cal_dZ_Ij()
+            residual[(2, 0)] = cal_dZ_IJ()
+            residual[(0, 2)] = cal_dZ_ij()
+
             return residual
         # calculate similarity transfromed Hamiltonian
         H_bar = self.sim_trans_H(self.H, T_args)
         # calculation net residual
-        net_residual = cal_net_residual(H_bar, Z_args)
+        net_residual = self.cal_net_residual(H_bar, Z_args)
         # calculate T residual
-        t_residual = cal_T_residual(H_bar, Z_args)
+        t_residual = cal_T_residual(net_residual, Z_args)
         # calculate Z residual
-        z_residual = cal_Z_residual(net_residual, t_residual)
+        z_residual = cal_Z_residual(net_residual, Z_args, t_residual)
 
         return t_residual, z_residual
 
@@ -610,7 +677,7 @@ class vibronic_model_hamiltonian(object):
             for block in T_amplitude.keys():
                 T_residual[block] = np.zeros_like(T_amplitude[block])
             for block in Z_amplitude.keys():
-                Z_residual[blck] = np.zeros_like(Z_amplitude[block])
+                Z_residual[block] = np.zeros_like(Z_amplitude[block])
             for x in range(A):
                 # calculate residual one surface at a time
                 t_amplitude, z_amplitude = {}, {}
