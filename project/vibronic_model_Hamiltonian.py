@@ -29,7 +29,7 @@ import opt_einsum as oe
 class vibronic_model_hamiltonian(object):
     """ vibronic model hamiltonian class implement TNOE approach to simulation thermal properties of vibronic models. """
 
-    def __init__(self, freq, LCP, VE, num_mode, num_surf):
+    def __init__(self, freq, LCP, VE, num_mode, num_surf, FC=False):
         """ initialize hamiltonian parameters:
         freq: vibrational frequencies
         LCP: linear coupling_constants
@@ -44,6 +44,7 @@ class vibronic_model_hamiltonian(object):
         self.Freq = freq
         self.LCP = LCP
         self.VE = VE
+        self.FC = FC
 
         # Boltzmann constant (eV K-1)
         self.Kb = 8.61733326e-5
@@ -58,8 +59,15 @@ class vibronic_model_hamiltonian(object):
         # first order
         self.H[(1, 0)] = np.array(LCP).transpose(1, 2, 0) / np.sqrt(2)
         self.H[(0, 1)] = np.array(LCP).transpose(1, 2, 0) / np.sqrt(2)
-        # second order
 
+        # exclude off-diagonal elements if FC flag is True
+        if self.FC:
+            for a, b in it.product(range(self.A), repeat=2):
+                if a != b:
+                    self.H[(1, 0)][a, b, :] = np.zeros(self.N)
+                    self.H[(0, 1)][a, b, :] = np.zeros(self.N)
+
+        # second order
         self.H[(1, 1)] = np.zeros([self.A, self.A, self.N, self.N])
         for a in range(self.A):
             for i in range(self.N):
@@ -261,13 +269,13 @@ class vibronic_model_hamiltonian(object):
 
     def sim_trans_H(self, H_args, T_args):
         """calculate similarity transformed Hamiltonian (H{e^S})_connected"""
-        N = self.N
+        A, N = self.A, self.N
 
         def f_t_0(H, T):
             """return residue R_0: (0, 0) block"""
 
             # initialize as zero
-            R = 0.
+            R = np.zeros([A, A])
 
             # constant
             R += H[(0, 0)]
@@ -295,7 +303,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_I: (0, 1) block"""
 
             # initialize as zero
-            R = np.zeros(N)
+            R = np.zeros([A, A, N])
 
             # linear
             R += H[(0, 1)]
@@ -321,7 +329,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_i: (1, 0) block"""
 
             # initialize
-            R = np.zeros(N)
+            R = np.zeros([A, A, N])
 
             # non zero initial value of R
             R += H[(1, 0)]
@@ -350,7 +358,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_Ij: (1, 1) block"""
 
             # initialize
-            R = np.zeros([N, N])
+            R = np.zeros([A, A, N, N])
 
             # first term
             R += H[(1, 1)]
@@ -377,7 +385,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_IJ: (0, 2) block"""
 
             # initialize as zero
-            R = np.zeros([N, N])
+            R = np.zeros([A, A, N, N])
 
             # quadratic
             R += H[(0, 2)]
@@ -394,14 +402,13 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('abkl,lj,ki->abij', H[(2, 0)], T[(0, 2)], T[(0, 2)])
             R += np.einsum('abkl,ki,lj->abij', H[(0, 2)], T[(1, 1)], T[(1, 1)])
 
-
             return R
 
         def f_t_IJ(H, T):
             """return residue R_ij: (2, 0) block"""
 
             # # initialize as zero
-            R = np.zeros([N, N])
+            R = np.zeros([A, A, N, N])
 
             # if self.hamiltonian_truncation_order >= 2:
 
@@ -426,12 +433,12 @@ class vibronic_model_hamiltonian(object):
 
         # compute similarity transformed Hamiltonian over e^T
         sim_h = {}
-        sim_h[(0, 0)] = f_t_0(H_args, t_args)
-        sim_h[(0, 1)] = f_t_i(H_args, t_args)
-        sim_h[(1, 0)] = f_t_I(H_args, t_args)
-        sim_h[(1, 1)] = f_t_Ij(H_args, t_args)
-        sim_h[(0, 2)] = f_t_ij(H_args, t_args)
-        sim_h[(2, 0)] = f_t_IJ(H_args, t_args)
+        sim_h[(0, 0)] = f_t_0(H_args, T_args)
+        sim_h[(0, 1)] = f_t_i(H_args, T_args)
+        sim_h[(1, 0)] = f_t_I(H_args, T_args)
+        sim_h[(1, 1)] = f_t_Ij(H_args, T_args)
+        sim_h[(0, 2)] = f_t_ij(H_args, T_args)
+        sim_h[(2, 0)] = f_t_IJ(H_args, T_args)
 
         return sim_h
 
@@ -464,7 +471,6 @@ class vibronic_model_hamiltonian(object):
 
             # initialize as zero
             R = np.zeros([A, N])
-            # R += H[(0, 1)]
             # R += np.einsum('abik,bk->ai', H[(0, 2)], T[(1, 0)])
 
             # terms associated with thermal
@@ -482,7 +488,6 @@ class vibronic_model_hamiltonian(object):
             # initialize
             R = np.zeros([A, N])
 
-            R += H[(1, 0)]
             R += np.einsum('abik,bk->ai', H[(1, 1)], T[(1, 0)])
             R += np.einsum('abk,bki->ai', H[(0, 1)], T[(2, 0)])
 
@@ -500,7 +505,6 @@ class vibronic_model_hamiltonian(object):
 
             # initialize
             R = np.zeros([A, N, N])
-            # R += H[(1, 1)]
             # R += np.einsum('abik,bkj->aij', H[(0, 2)], T[2, 0])
 
             # terms associated with thermal
@@ -543,7 +547,6 @@ class vibronic_model_hamiltonian(object):
 
             # # initialize as zero
             R = np.zeros([A, N, N])
-            R += H[(2, 0)]  # h term
             R += np.einsum('abjk,bki->aij', H[(1, 1)], T[(2, 0)])
             R += np.einsum('abik,bkj->aij', H[(1, 1)], T[(2, 0)])
             # terms associated with thermal
@@ -592,7 +595,7 @@ class vibronic_model_hamiltonian(object):
             residual = {}
             residual[(0, 1)] = cal_dT_i()
             residual[(1, 0)] = cal_dT_I()
-            residual[(1, 0)] = cal_dT_Ij()
+            residual[(1, 1)] = cal_dT_Ij()
 
             return residual
 
@@ -612,7 +615,7 @@ class vibronic_model_hamiltonian(object):
             def cal_dZ_I():
                 """(1, 0) block of Z residual"""
                 R = R_args[(1, 0)]
-                R -= np.einsum('i,a->ai', dT_args[(1, 0)], Z_args[(0, 0)])
+                R += np.einsum('i,a->ai', dT_args[(1, 0)], Z_args[(0, 0)])
                 return R
 
             def cal_dZ_Ij():
@@ -658,20 +661,20 @@ class vibronic_model_hamiltonian(object):
         return t_residual, z_residual
 
 
-    def TFCC_integration(self, output_path, T_initial, T_final, N):
+    def TFCC_integration(self, output_path, T_initial, T_final, N_step):
         """conduct TFCC imaginary time integration to calculation thermal properties"""
-
+        A, N = self.A, self.N
         # map initial T amplitude
-        T_amplitude, Z_amplitude = self._map_initial_T_amplitude(T_initial=T_initial)
+        T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial)
 
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
         step = (beta_final - beta_initial) / N
-        self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N))
+        self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N_step))
         self.partition_function = []
         self.internal_energy = []
         # thermal field imaginary time propagation
-        for i in range(N):
+        for i in range(N_step):
             # initialize each block of T / Z residual as zeros
             T_residual, Z_residual = {}, {}
             for block in T_amplitude.keys():
@@ -685,7 +688,7 @@ class vibronic_model_hamiltonian(object):
                     t_amplitude[block] = T_amplitude[block][x, :]
                 for block in Z_amplitude.keys():
                     z_amplitude[block] = Z_amplitude[block][x, :]
-                t_residual, z_residual = self.cal_T_Z_residual(self.H, t_amplitude, z_amplitude)
+                t_residual, z_residual = self.cal_T_Z_residual(t_amplitude, z_amplitude)
                 for block in t_residual.keys():
                     T_residual[block][x, :] += t_residual[block]
                 for block in z_residual.keys():
@@ -693,8 +696,10 @@ class vibronic_model_hamiltonian(object):
 
             # update amplitudes
             for block in T_amplitude.keys():
+                print("T{:}:{:}".format(block, T_residual[block]))
                 T_amplitude[block] -= T_residual[block] * step
             for block in Z_amplitude.keys():
+                print("Z{:}:{:}".format(block, Z_residual[block]))
                 Z_amplitude[block] -= Z_residual[block] * step
 
             # calculate partition function
@@ -702,12 +707,15 @@ class vibronic_model_hamiltonian(object):
             self.partition_function.append(Z)
             # calculate thermal internal energy
             E = np.trace(Z_residual[(0, 0)]) / Z
-            self.thermal_internal_energy.append(E)
+            self.internal_energy.append(E)
 
             print("step {:}:".format(i))
             print("Temperature: {:} K".format(self.temperature_grid[i]))
             print("thermal internal energy: {:} cm-1".format(E))
             print("partition function: {:}".format(Z))
+
+            # if i>20:
+                # exit(0)
 
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
