@@ -669,7 +669,7 @@ class vibronic_model_hamiltonian(object):
 
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
-        step = (beta_final - beta_initial) / N
+        step = (beta_final - beta_initial) / N_step
         self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N_step))
         self.partition_function = []
         self.internal_energy = []
@@ -685,9 +685,9 @@ class vibronic_model_hamiltonian(object):
                 # calculate residual one surface at a time
                 t_amplitude, z_amplitude = {}, {}
                 for block in T_amplitude.keys():
-                    t_amplitude[block] = T_amplitude[block][x, :]
+                    t_amplitude[block] = T_amplitude[block][x, :].copy()
                 for block in Z_amplitude.keys():
-                    z_amplitude[block] = Z_amplitude[block][x, :]
+                    z_amplitude[block] = Z_amplitude[block][x, :].copy()
                 t_residual, z_residual = self.cal_T_Z_residual(t_amplitude, z_amplitude)
                 for block in t_residual.keys():
                     T_residual[block][x, :] += t_residual[block]
@@ -703,6 +703,8 @@ class vibronic_model_hamiltonian(object):
                 Z_amplitude[block] -= Z_residual[block] * step
 
             # calculate partition function
+            # print("Z[(0, 0)]:\n{:}".format(Z_amplitude[0, 0]))
+            # print("step:{:}".format(step))
             Z = np.trace(Z_amplitude[(0, 0)])
             self.partition_function.append(Z)
             # calculate thermal internal energy
@@ -714,13 +716,13 @@ class vibronic_model_hamiltonian(object):
             print("thermal internal energy: {:} cm-1".format(E))
             print("partition function: {:}".format(Z))
 
-            # if i>20:
+            # if i>1:
                 # exit(0)
 
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"thermal_data_TFCC.csv", index=False)
+        df.to_csv(output_path+"thermal_data_TNOE.csv", index=False)
 
         return
 
