@@ -452,7 +452,6 @@ class vibronic_model_hamiltonian(object):
             # initialize as zero
             R = np.zeros(A)
 
-            R += np.einsum('ab,b->a', H[(0, 0)], T[(0, 0)])
             R += np.einsum('abk,bk->a', H[(0, 1)], T[(1, 0)])
             R += 0.5 * np.einsum('abkl,bkl->a', H[(0, 2)], T[(2, 0)])
 
