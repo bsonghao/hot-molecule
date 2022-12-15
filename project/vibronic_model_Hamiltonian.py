@@ -660,7 +660,7 @@ class vibronic_model_hamiltonian(object):
         return t_residual, z_residual
 
 
-    def TFCC_integration(self, output_path, T_initial, T_final, N_step):
+    def TFCC_integration(self, output_path, T_initial, T_final, N_step, debug_flag=False):
         """conduct TFCC imaginary time integration to calculation thermal properties"""
         A, N = self.A, self.N
         # map initial T amplitude
@@ -695,10 +695,12 @@ class vibronic_model_hamiltonian(object):
 
             # update amplitudes
             for block in T_amplitude.keys():
-                print("T{:}:{:}".format(block, T_residual[block]))
+                if debug_flag:
+                    print("T{:}:{:}".format(block, T_residual[block]))
                 T_amplitude[block] -= T_residual[block] * step
             for block in Z_amplitude.keys():
-                print("Z{:}:{:}".format(block, Z_residual[block]))
+                if debug_flag:
+                    print("Z{:}:{:}".format(block, Z_residual[block]))
                 Z_amplitude[block] -= Z_residual[block] * step
 
             # calculate partition function
