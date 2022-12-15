@@ -614,7 +614,7 @@ class vibronic_model_hamiltonian(object):
             def cal_dZ_I():
                 """(1, 0) block of Z residual"""
                 R = R_args[(1, 0)]
-                R += np.einsum('i,a->ai', dT_args[(1, 0)], Z_args[(0, 0)])
+                R -= np.einsum('i,a->ai', dT_args[(1, 0)], Z_args[(0, 0)])
                 return R
 
             def cal_dZ_Ij():
