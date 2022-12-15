@@ -512,8 +512,8 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('abik,bjk->aij', H[(2, 0)], T[(0, 2)])
             # disconneted CI terms
             R += np.einsum('ab,bij->aij', H[(0, 0)], T[(1, 1)])
-            # R += np.einsum('abi,bj->aij', H[(1, 0)], T[(0, 1)])
-            R += np.einsum('abj,bi->aij', H[(0, 1)], T[(1, 0)])
+            R += np.einsum('abi,bj->aij', H[(1, 0)], T[(0, 1)])
+            # R += np.einsum('abj,bi->aij', H[(0, 1)], T[(1, 0)])
             # R += np.einsum('abij,b->aij', H[(1, 1)], T[(0, 0)])
 
             return R
