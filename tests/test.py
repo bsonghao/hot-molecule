@@ -11,28 +11,43 @@ import pstats
 import numpy as np
 import json
 
+
 # import the path to the package
 project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule'))
 sys.path.insert(0, project_dir)
-inputdir = '/Users/pauliebao/hot-molecule/data/input_json/'
+inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/'
 outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
 import Project
 from Project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
+from Project.vibronic import vIO, VMK
 
-def read_in_model(dir, file_name):
-    """read in model parameters from json file"""
-    json_file =  open(dir+file_name)
-    dict = json.load(json_file)
-    N = dict["number of modes"]
-    A = dict["number of surfaces"]
-    VE = np.array(dict["energies"])
-    Freq = np.array(dict["frequencies"]) * 10
-    LCP = np.array(dict["linear couplings"])
-    json_file.close()
+order_dict = {
+    0: "constant",
+    1: "linear",
+    2: "quadratic",
+    3: "cubic",
+    4: "quartic",
+}
 
-    return N, A, VE, Freq, LCP
+
+def read_in_model(dir, model_name, order):
+    """read in model parameters from MCTDH operator file"""
+    # read in entire model
+    file_name = "{:}{:}.op".format(dir, model_name)
+    raw_model = vIO.read_raw_model_op_file(file_name, highest_order=order, dimension_of_dipole_moments=1)
+    # remove any higher order terms
+    vIO.remove_higher_order_terms(raw_model, highest_order=order)
+    # write new model into the mctdh operator file
+    vIO.write_raw_model_op_file(f"{dir}{model_name}_{order_dict[order]}.op", raw_model, highest_order=order)
+    # read in our specific model
+    path_op = join(inputdir, f"{model_name}_{order_dict[order]}.op")
+    model = vIO.extract_excited_state_model_op(path_op, FC=False, highest_order= order,\
+                    dimension_of_dipole_moments=1)
+    vIO.prepare_model_for_cc_integration(model,order)
+
+    return model
 
 
 
@@ -41,21 +56,21 @@ def main():
     """main function that run TNOE simulation"""
     # Hamiltonian model parameters
     # define number of vibrational model
-    name = "displaced_6.json"
+    name = "h2o"
 
-    num_mode, num_surf, VE, Freq, LCP = read_in_model(inputdir, name)
+    model = read_in_model(inputdir, name, order=1)
 
-    print("number of surfaces:{:}".format(num_surf))
-    print("number of modes:{:}".format(num_mode))
-    print("verticle energy (in eV):\n{:}".format(VE))
-    print("Frequencies (in eV):\n{:}".format(Freq))
-    print("Linear coupling constants (in eV):\n{:}".format(LCP))
+    print("number of surfaces:{:}".format(model[VMK.A]))
+    print("number of modes:{:}".format(model[VMK.N]))
+    print("verticle energy (in eV):\n{:}".format(model[VMK.E]))
+    print("Frequencies (in eV):\n{:}".format(model[VMK.w]))
+    print("Linear coupling constants (in eV):\n{:}".format(model[VMK.G1]))
 
 
     # initialize the Hamiltonian
-    model = vibronic_model_hamiltonian(Freq, LCP, VE, num_mode, num_surf, FC=True)
-    model.TFCC_integration(T_initial=1e4, T_final=1e3, N_step=10000, output_path=outputdir)
-    model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=10000, T_final=10, N_step=10000, compare_with_TNOE=True)
+    model_hamiltonian = vibronic_model_hamiltonian(model, truncation_order = 1, FC=False)
+    model_hamiltonian.TFCC_integration(T_initial=1e4, T_final=3e3, N_step=10000, output_path=outputdir)
+    # model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=10000, T_final=10, N_step=10000, compare_with_TNOE=True)
     # model._map_initial_amplitude(T_initial=1e4)
 
     # model.sum_over_states(basis_size=40, output_path=outputdir, compare_with_TFCC=False, T_grid=np.linspace(100, 10000, 10000))

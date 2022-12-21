@@ -25,56 +25,90 @@ import itertools as it
 #
 import opt_einsum as oe
 
+# local import
+from Project.vibronic import vIO, VMK
+from Project.log_conf import log
+
+
 
 class vibronic_model_hamiltonian(object):
-    """ vibronic model hamiltonian class implement TNOE approach to simulation thermal properties of vibronic models. """
-
-    def __init__(self, freq, LCP, VE, num_mode, num_surf, FC=False):
+    """ vibronic model hamiltonian class implement TNOE approach to simulation
+    thermal properties of vibronic models. """
+    def __init__(self, model, truncation_order, FC=False):
         """ initialize hamiltonian parameters:
-        freq: vibrational frequencies
-        LCP: linear coupling_constants
-        VE: vertical energy
-        num_mode: number of vibrational modes
-        num_surf: number of electronic surfaces
+        model: an object the contains parameters of the vibronic model Hamiltonian
+        truncation_order: truncation order of the vibronic model Hamiltonian
         """
 
         # initialize the Hamiltonian parameters as object instances
-        self.A = num_surf
-        self.N = num_mode
-        self.Freq = freq
-        self.LCP = LCP
-        self.VE = VE
+        # number of potential energy surfaces
+        self.A = model[VMK.A]
+
+        # number of normal modes
+        self.N = model[VMK.N]
+
+        # Hamiltonian truncation order
+        self.truncation_order = truncation_order
+
+        # vibronic model
+        self.model = model
+
+        # A flag to determine if to turn on/off the off-diagonal elements
         self.FC = FC
 
         # Boltzmann constant (eV K-1)
         self.Kb = 8.61733326e-5
 
-        # define Hamiltonian object as a python dictionary where the keys are the rank of the Hamiltonian
-        # and we represent the Hamitlnian in the form of second quantization
-        self.H = dict()
-        # constant
-        self.H[(0, 0)] = np.zeros([self.A, self.A])
-        for i in range(self.A):
-            self.H[(0, 0)][i, i] = VE[i, i] + 0.5 * sum(freq)
-        # first order
-        self.H[(1, 0)] = np.array(LCP).transpose(1, 2, 0) / np.sqrt(2)
-        self.H[(0, 1)] = np.array(LCP).transpose(1, 2, 0) / np.sqrt(2)
+        # initialize the vibronic model Hamiltonian
+        # define coefficient tensors
+        A, N = self.A, self.N
 
-        # exclude off-diagonal elements if FC flag is True
+        self.H = {
+            (0, 0): np.zeros((A, A)),
+            (0, 1): np.zeros((A, A, N)),
+            (1, 0): np.zeros((A, A, N)),
+            (1, 1): np.zeros((A, A, N, N)),
+            (0, 2): np.zeros((A, A, N, N)),
+            (2, 0): np.zeros((A, A, N, N))
+        }
+
+        # constant term
+        self.H[(0, 0)] += self.model[VMK.E].copy()
+        ## H.O. ground state energy
+        for a in range(A):
+            self.H[(0, 0)][a, a] += 0.5 * np.sum(self.model[VMK.w])
+
+        log.info("zero point energy: {:.8f} ev".format(0.5 * np.sum(self.model[VMK.w])))
+
+        # frequencies
+        for a, j in it.product(range(A), range(N)):
+            self.H[(1, 1)][a, a, j, j] += self.model[VMK.w][j]
+
+        # linear terms
+        if self.truncation_order >= 1:
+            self.H[(0, 1)] += self.model[VMK.G1] / np.sqrt(2)
+            self.H[(1, 0)] += self.model[VMK.G1] / np.sqrt(2)
+
+        # quadratic terms
+        if self.truncation_order >= 2:
+            ## quadratic correction to H.O. ground state energy
+            self.H[(0, 0)] += 0.5 * np.trace(self.model[VMK.G2], axis1=2, axis2=3)
+
+            # quadratic terms
+            self.H[(1, 1)] += self.model[VMK.G2]
+            self.H[(2, 0)] += 0.5 * self.model[VMK.G2]
+            self.H[(0, 2)] += 0.5 * self.model[VMK.G2]
+
+        # if computing Frank-Condon(FC) model then
+        # zero out all electronically-diagonal terms
         if self.FC:
-            for a, b in it.product(range(self.A), repeat=2):
+            for a, b in it.product(range(A), repeat=2):
                 if a != b:
-                    self.H[(1, 0)][a, b, :] = np.zeros(self.N)
-                    self.H[(0, 1)][a, b, :] = np.zeros(self.N)
-
-        # second order
-        self.H[(1, 1)] = np.zeros([self.A, self.A, self.N, self.N])
-        for a in range(self.A):
-            for i in range(self.N):
-                self.H[(1, 1)][a, a, i, i] = freq[i]
-
-        self.H[(2, 0)] = np.zeros([self.A, self.A, self.N, self.N])
-        self.H[(0, 2)] = np.zeros([self.A, self.A, self.N, self.N])
+                    self.H[(1, 1)][a, b, :] = np.zeros([N, N])
+                    self.H[(2, 0)][a, b, :] = np.zeros([N, N])
+                    self.H[(0, 2)][a, b, :] = np.zeros([N, N])
+                    self.H[(1, 0)][a, b, :] = np.zeros([N, ])
+                    self.H[(0, 1)][a, b, :] = np.zeros([N, ])
 
         print("number of vibrational mode {:}".format(self.N))
         print("##### Hamiltonian parameters ######")
@@ -201,8 +235,8 @@ class vibronic_model_hamiltonian(object):
             z_0 = np.eye(A)
             for a in range(A):
                 for i in range(N):
-                    z_0[a, a] *= 1 / (1 - np.exp(-beta * self.Freq[i]))
-                z_0[a, a] *= np.exp(-beta*(self.H[(0, 0)][a, a]-sum(self.H[(1, 0)][a, a, :]**2 / self.Freq)))
+                    z_0[a, a] *= 1 / (1 - np.exp(-beta * self.model[VMK.w][i]))
+                z_0[a, a] *= np.exp(-beta*(self.H[(0, 0)][a, a]-sum(self.H[(1, 0)][a, a, :]**2 / self.model[VMK.w])))
 
             return z_0
 
@@ -212,8 +246,8 @@ class vibronic_model_hamiltonian(object):
             t_i = np.zeros([A, N])
             t_I = np.zeros([A, N])
             for a in range(A):
-                t_i[a, :] = -self.H[(0, 1)][a, a, :] / self.Freq
-                t_I[a, :] = -self.H[(1, 0)][a, a, :] / self.Freq
+                t_i[a, :] = -self.H[(0, 1)][a, a, :] / self.model[VMK.w]
+                t_I[a, :] = -self.H[(1, 0)][a, a, :] / self.model[VMK.w]
 
             return t_i, t_I
         def map_t11_amplitude(beta):
@@ -221,7 +255,7 @@ class vibronic_model_hamiltonian(object):
             # initialize t11 amplitude
             t_11 = np.zeros([A, N, N])
             for a, i in it.product(range(A), range(N)):
-                t_11[a, i, i] = 1 / (np.exp(beta * self.Freq[i]) - 1)
+                t_11[a, i, i] = 1 / (np.exp(beta * self.model[VMK.w][i]) - 1)
             return t_11
 
         N, A = self.N, self.A
