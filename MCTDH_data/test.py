@@ -6,7 +6,7 @@ def main():
     file_name = "output"
     data = read_energy(file_name)
     data.read_data(name="h2o")
-    data.process_data(name="h2o")
+    data.process_data(name="h2o", T_grid=np.linspace(100, 2000, 20000))
 
     return
 
