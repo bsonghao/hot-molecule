@@ -34,10 +34,12 @@ from Project.log_conf import log
 class vibronic_model_hamiltonian(object):
     """ vibronic model hamiltonian class implement TNOE approach to simulation
     thermal properties of vibronic models. """
-    def __init__(self, model, truncation_order, FC=False):
+    def __init__(self, model, name, truncation_order, FC=False):
         """ initialize hamiltonian parameters:
         model: an object the contains parameters of the vibronic model Hamiltonian
+        name: name of the vibronic model
         truncation_order: truncation order of the vibronic model Hamiltonian
+        GS_energy: ground state energy
         """
 
         # initialize the Hamiltonian parameters as object instances
@@ -52,6 +54,9 @@ class vibronic_model_hamiltonian(object):
 
         # vibronic model
         self.model = model
+
+        # name of the vibronic model
+        self.name = name
 
         # A flag to determine if to turn on/off the off-diagonal elements
         self.FC = FC
@@ -71,7 +76,7 @@ class vibronic_model_hamiltonian(object):
             (0, 2): np.zeros((A, A, N, N)),
             (2, 0): np.zeros((A, A, N, N))
         }
-
+        print("Zero point energy:{:}".format(0.5 * np.sum(self.model[VMK.w])))
         # constant term
         self.H[(0, 0)] += self.model[VMK.E].copy()
         ## H.O. ground state energy
@@ -757,7 +762,7 @@ class vibronic_model_hamiltonian(object):
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"thermal_data_TNOE.csv", index=False)
+        df.to_csv(output_path+"thermal_data_TNOE_for_{:}.csv".format(self.name), index=False)
 
         return
 

@@ -68,8 +68,8 @@ def main():
 
 
     # initialize the Hamiltonian
-    model_hamiltonian = vibronic_model_hamiltonian(model, truncation_order = 1, FC=False)
-    model_hamiltonian.TFCC_integration(T_initial=1e4, T_final=3e3, N_step=10000, output_path=outputdir)
+    model_hamiltonian = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False)
+    model_hamiltonian.TFCC_integration(T_initial=1e4, T_final=2.8e3, N_step=10000, output_path=outputdir)
     # model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=10000, T_final=10, N_step=10000, compare_with_TNOE=True)
     # model._map_initial_amplitude(T_initial=1e4)
 
