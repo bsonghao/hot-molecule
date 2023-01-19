@@ -717,9 +717,6 @@ class vibronic_model_hamiltonian(object):
             print("thermal internal energy: {:} cm-1".format(E))
             print("partition function: {:}".format(Z))
 
-            # if i>1:
-                # exit(0)
-
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
