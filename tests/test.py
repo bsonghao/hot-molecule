@@ -44,7 +44,7 @@ def main():
     model.thermal_field_transformation(Temp=100)
     model.reduce_H_tilde()
     model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=10000, T_final=100, N=10000)
-    model.TFCC_integration(T_initial=1e4, T_final=100, N=10000, output_path=outputdir)
+    # model.TFCC_integration(T_initial=1e4, T_final=100, N=10000, output_path=outputdir)
     # model.sum_over_states(basis_size=40, output_path=outputdir, compare_with_TFCC=False, T_grid=np.linspace(100, 10000, 10000))
     # model._map_initial_T_amplitude_from_FCI(T_initial=1000, basis_size=10)
 
