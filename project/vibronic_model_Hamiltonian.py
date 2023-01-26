@@ -118,7 +118,7 @@ class vibronic_model_hamiltonian(object):
 
         def Cal_thermal_internal_energy(E, T, Z):
             """ compute thermal_internal_energy """
-            energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
+            energy = sum(E * np.exp(-E / (self.Kb * T)))
             return energy
 
         beta_initial = 1. / (T_initial * self.Kb)
@@ -180,8 +180,8 @@ class vibronic_model_hamiltonian(object):
         # quadratic terms
         self.H_tilde[(1, 1)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(1, 1)]),
-                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
-                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
+                                "ab": np.einsum('i,j,ij->ij', 2 * self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
+                                "ba": np.einsum('i,j,ij->ij', 2 * self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
                                 "bb": np.einsum('j,i,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
                                }
 
@@ -639,7 +639,7 @@ class vibronic_model_hamiltonian(object):
         """conduct TFCC imaginary time integration to calculation thermal properties"""
         # map initial T amplitude
         if compare_with_FCI:
-            T_amplitude = self._map_initial_T_amplitude_from_FCI(T_initial=T_initial)
+            T_amplitude = self._map_initial_T_amplitude_from_FCI(T_initial=T_initial, basis_size=20)
 
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
@@ -650,12 +650,14 @@ class vibronic_model_hamiltonian(object):
         # thermal field imaginary time propagation
         for i in range(N):
             Residual = self.CC_residue(self.H_tilde_reduce, T_amplitude)
-            # energy
-            E = Residual[0]
-            self.internal_energy.append(E)
+
             # partition function
             Z = np.exp(T_amplitude[0])
             self.partition_function.append(Z)
+
+            # energy
+            E = Residual[0] * Z
+            self.internal_energy.append(E)
             # update amplitudes
             T_amplitude[0] -= Residual[0] * step
             T_amplitude[1] -= Residual[1] * step
