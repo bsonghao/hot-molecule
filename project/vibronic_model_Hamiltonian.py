@@ -180,14 +180,14 @@ class vibronic_model_hamiltonian(object):
         # quadratic terms
         self.H_tilde[(1, 1)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(1, 1)]),
-                                "ab": np.einsum('i,j,ij->ij', 2 * self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
-                                "ba": np.einsum('i,j,ij->ij', 2 * self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
+                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
+                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
                                 "bb": np.einsum('j,i,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
                                }
 
         self.H_tilde[(2, 0)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(2, 0)]),
-                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
+                                "ab": 2 * np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
                                 "ba": np.zeros_like(self.H[2, 0]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(0, 2)]),
                                }
@@ -195,7 +195,7 @@ class vibronic_model_hamiltonian(object):
         self.H_tilde[(0, 2)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(0, 2)]),
                                 "ab": np.zeros_like(self.H[(0, 2)]),
-                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
+                                "ba": 2 * np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(2, 0)])
                                }
 
