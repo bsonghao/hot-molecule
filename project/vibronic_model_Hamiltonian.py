@@ -167,7 +167,7 @@ class vibronic_model_hamiltonian(object):
         # Bogliubov tranform that Hamiltonian
         self.H_tilde = dict()
 
-        # constant term???
+        # constant terms
         self.H_tilde[(0, 0)] = self.H[(0, 0)] + np.einsum('ii,i,i->', self.H[(1, 1)], self.sinh_theta, self.sinh_theta)
 
         # linear terms
@@ -407,6 +407,28 @@ class vibronic_model_hamiltonian(object):
 
         return residue
 
+    def cal_physical_DM(self, T_amplitude):
+        """
+        calculate physical density matrix from TFCC amplitudes
+        """
+        N =self.N
+        DM = {}
+        # (1, 0) block
+        DM[(1, 0)] = np.einsum('i,i->i', self.cosh_theta, T_amplitude[1][:N])
+        # (0, 1) block
+        DM[(0, 1)] = np.einsum('i,i->i', self.sinh_theta, T_amplitude[1][N:])
+        # (1, 1) block
+        DM[(1, 1)] = np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, T_amplitude[2][N:, :N])
+        DM[(1, 1)] += np.einsum('i,j,i,j->ij', self.sinh_theta, self.cosh_theta, T_amplitude[1][N:], T_amplitude[1][:N])
+        # (2, 0) block
+        DM[(2, 0)] = np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, T_amplitude[2][:N, :N])
+        DM[(2, 0)] += np.einsum('i,j,i,j->ij', self.cosh_theta, self.cosh_theta, T_amplitude[1][:N], T_amplitude[1][:N])
+        # (0, 2) block
+        DM[(0, 2)] = np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, T_amplitude[2][N:, N:])
+        DM[(0, 2)] += np.einsum('i,j,i,j->ij', self.sinh_theta, self.sinh_theta, T_amplitude[1][N:], T_amplitude[1][N:])
+
+        return DM
+
     def TFCC_integration(self, output_path, T_initial, T_final, N):
         """conduct TFCC imaginary time integration to calculation thermal properties"""
         # map initial T amplitude
@@ -422,12 +444,28 @@ class vibronic_model_hamiltonian(object):
         for i in range(N):
             Residual = self.CC_residue(self.H_tilde_reduce, T_amplitude)
 
+            # calculation physical density matrix
+            PDM = self.cal_physical_DM(T_amplitude)
+
+            # calculation energy from pysical density matrix
+            E_DM = self.H[(0, 0)]
+            E_DM += np.einsum('i,i->', self.H[(1, 0)], PDM[(0, 1)])
+            E_DM += np.einsum('i,i->', self.H[(0, 1)], PDM[(1, 0)])
+            E_DM += np.einsum('ij,ji->', self.H[(1, 1)], PDM[(1, 1)])
+            E_DM += 0.5 * np.einsum('ij,ji->', self.H[(2, 0)], PDM[(0, 2)])
+            E_DM += 0.5 * np.einsum('ij,ji->', self.H[(0, 2)], PDM[(2, 0)])
+
             # partition function
             Z = np.exp(T_amplitude[0])
             self.partition_function.append(Z)
             # energy
             E = Residual[0]
             self.internal_energy.append(E)
+
+            # calculation two ways of the energy calculations
+            print("E_CC:{:}".format(E))
+            print("E_DM:{:}".format(E_DM))
+            assert np.allclose(E, E_DM)
             # update amplitudes
             T_amplitude[0] -= Residual[0] * step
             T_amplitude[1] -= Residual[1] * step
