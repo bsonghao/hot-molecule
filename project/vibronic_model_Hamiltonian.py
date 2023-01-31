@@ -246,9 +246,9 @@ class vibronic_model_hamiltonian(object):
 
             # symmetrize t_2 amplitude
             t_2_new = np.zeros_like(t_2)
-            for i, j in it.product(range(N), repeat=2):
+            for i, j in it.product(range(2 * N), repeat=2):
                 t_2_new[i, j] = 0.5 * (t_2[i, j] + t_2[j, i])
-                
+
             return t_2_new
 
         N = self.N
@@ -434,7 +434,7 @@ class vibronic_model_hamiltonian(object):
             T_amplitude[2] -= Residual[2] * step
             print("step {:}:".format(i))
             print("Temperature: {:} K".format(self.temperature_grid[i]))
-            print("thermal internal energy: {:} cm-1".format(E))
+            print("thermal internal energy: {:} ev-1".format(E))
             print("partition function: {:}".format(Z))
 
         # store data
