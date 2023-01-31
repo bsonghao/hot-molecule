@@ -118,11 +118,11 @@ class vibronic_model_hamiltonian(object):
         def Cal_partition_function(E, T):
             """ compute partition function """
             Z = sum(np.exp(-E / (self.Kb * T)))
-            return np.log(Z)
+            return Z
 
         def Cal_thermal_internal_energy(E, T, Z):
             """ compute thermal_internal_energy """
-            energy = sum(E * np.exp(-E / (self.Kb * T))) / np.exp(Z)
+            energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
         beta_initial = 1. / (T_initial * self.Kb)
@@ -191,15 +191,15 @@ class vibronic_model_hamiltonian(object):
 
         self.H_tilde[(2, 0)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(2, 0)]),
-                                "ab": 2 * np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
-                                "ba": np.zeros_like(self.H[2, 0]),
+                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
+                                "ba": np.einsum('i,j,ji->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(0, 2)]),
                                }
 
         self.H_tilde[(0, 2)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "ab": np.zeros_like(self.H[(0, 2)]),
-                                "ba": 2 * np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
+                                "ab": np.einsum('i,j,ji->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
+                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(2, 0)])
                                }
 
@@ -244,7 +244,12 @@ class vibronic_model_hamiltonian(object):
             t_2[N:, :N] += np.diag(BE_occ/ self.cosh_theta / self.sinh_theta)
             t_2[:N, N:] += np.diag((np.ones(N) + BE_occ) / self.cosh_theta / self.sinh_theta)
 
-            return t_2
+            # symmetrize t_2 amplitude
+            t_2_new = np.zeros_like(t_2)
+            for i, j in it.product(range(N), repeat=2):
+                t_2_new[i, j] = 0.5 * (t_2[i, j] + t_2[j, i])
+                
+            return t_2_new
 
         N = self.N
         beta_initial = 1. / (self.Kb * T_initial)
@@ -418,7 +423,7 @@ class vibronic_model_hamiltonian(object):
             Residual = self.CC_residue(self.H_tilde_reduce, T_amplitude)
 
             # partition function
-            Z = T_amplitude[0]
+            Z = np.exp(T_amplitude[0])
             self.partition_function.append(Z)
             # energy
             E = Residual[0]
