@@ -118,7 +118,7 @@ class vibronic_model_hamiltonian(object):
 
         def Cal_thermal_internal_energy(E, T, Z):
             """ compute thermal_internal_energy """
-            energy = sum(E * np.exp(-E / (self.Kb * T)))
+            energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
         beta_initial = 1. / (T_initial * self.Kb)
@@ -656,7 +656,7 @@ class vibronic_model_hamiltonian(object):
             self.partition_function.append(Z)
 
             # energy
-            E = Residual[0] * Z
+            E = Residual[0]
             self.internal_energy.append(E)
             # update amplitudes
             T_amplitude[0] -= Residual[0] * step
