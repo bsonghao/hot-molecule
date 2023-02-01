@@ -74,7 +74,7 @@ class vibronic_model_hamiltonian(object):
 
         print("### End of Hamiltonian parameters ####")
 
-    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N=10000):
+    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, num_step=10000):
         """calculation thermal properties through sum over states"""
         def construct_full_Hamitonian():
             """construct full Hamiltonian in H.O. basis"""
@@ -127,7 +127,7 @@ class vibronic_model_hamiltonian(object):
 
         beta_initial = 1. / (T_initial * self.Kb)
         beta_final = 1. / (T_final * self.Kb)
-        T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N))
+        T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, num_step))
         self.T_FCI = T_grid
         # contruct Hamiltonian in H.O. basis
         H = construct_full_Hamitonian()
@@ -170,7 +170,7 @@ class vibronic_model_hamiltonian(object):
         # constant terms
         self.H_tilde[(0, 0)] = self.H[(0, 0)] + np.einsum('ii,i,i->', self.H[(1, 1)], self.sinh_theta, self.sinh_theta)
 
-        # linear terms
+        # linear termss
         self.H_tilde[(1, 0)] = {
                                "a": self.cosh_theta * self.H[(1, 0)],
                                "b": self.sinh_theta * self.H[(0, 1)]
@@ -213,8 +213,15 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def _map_initial_T_amplitude(self, T_initial=1000):
+    def _map_initial_T_amplitude(self, T_initial, T_ref):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
+
+        def cal_energy(beta):
+            """calculate analytical expression of the thermal internal energy at given beta"""
+            E = self.H[(0, 0)]-sum(self.LCP**2 / self.Freq)/2.
+            E += sum(self.Freq * np.exp(-beta * self.Freq) / (np.ones(N) - np.exp(-beta * self.Freq)))
+            return E
+
         def map_t_0_amplitude(beta):
             """map t_0 amplitude from H.O. partition function"""
             z = 1
@@ -223,6 +230,7 @@ class vibronic_model_hamiltonian(object):
             z *= np.exp(-beta * (self.H[(0, 0)]-sum(self.LCP**2 / self.Freq)/2.))
             t_0 = np.log(z)
             return t_0
+
         def map_t1_amplitude():
             """
             map t_1 amplitude from linear coupling constant
@@ -241,8 +249,8 @@ class vibronic_model_hamiltonian(object):
             t_2 = np.zeros([2 * N, 2 * N])
 
             # enter initial t_2 for ab block
-            t_2[N:, :N] += np.diag(BE_occ/ self.cosh_theta / self.sinh_theta)
-            t_2[:N, N:] += np.diag((np.ones(N) + BE_occ) / self.cosh_theta / self.sinh_theta)
+            t_2[N:, :N] += np.diag(BE_occ / self.cosh_theta / self.sinh_theta)
+            t_2[:N, N:] += np.diag(BE_occ / self.cosh_theta / self.sinh_theta)
 
             # symmetrize t_2 amplitude
             t_2_new = np.zeros_like(t_2)
@@ -253,18 +261,32 @@ class vibronic_model_hamiltonian(object):
 
         N = self.N
         beta_initial = 1. / (self.Kb * T_initial)
+        beta_ref = 1. / (self.Kb * T_ref)
 
-        BE_occ = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_initial * self.Freq))
+        # calculation BE occupation number at initial beta
+        BE_occ_initial = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_initial * self.Freq))
+        # calculation BE occupation number at beta for TF reference state
+        BE_occ_ref = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_ref * self.Freq))
+
+        # calculate relative BE occupation number
+        BE_occ = BE_occ_initial.copy()
+        BE_occ -= BE_occ_ref
+
+        print("relative occupation number:{:}".format(BE_occ))
+
 
         initial_T_amplitude = {}
         initial_T_amplitude[0] = map_t_0_amplitude(beta_initial)
         initial_T_amplitude[1] = map_t1_amplitude()
         initial_T_amplitude[2] = map_t2_amplitude()
 
+        # calculate analytical expresssion of the intial thermal internal energy
+        initial_energy = cal_energy(beta_initial)
+
         print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
         print("initial double T amplitude:\n{:}".format(initial_T_amplitude[2]))
 
-        return initial_T_amplitude
+        return initial_T_amplitude, initial_energy
 
     def merge_linear(self, input_tensor):
         """ merge linear terms of the Bogliubov transformed tensor """
@@ -429,31 +451,40 @@ class vibronic_model_hamiltonian(object):
 
         return DM
 
-    def TFCC_integration(self, output_path, T_initial, T_final, N):
-        """conduct TFCC imaginary time integration to calculation thermal properties"""
+    def TFCC_integration(self, output_path, T_initial, T_final, T_ref, num_step, compare_energy=True):
+        """
+        conduct TFCC imaginary time integration to calculation thermal properties
+        T_initial: initial temperature of TFCC propagation
+        T_final: final temperature of TFCC propagation
+        T_ref: temperature for thermal field reference state
+        num_step: nunber of steps for numerical integration
+        """
         # map initial T amplitude
-        T_amplitude = self._map_initial_T_amplitude(T_initial=T_initial)
+        T_amplitude, initial_energy = self._map_initial_T_amplitude(T_initial=T_initial, T_ref=T_ref)
 
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
-        step = (beta_final - beta_initial) / N
-        self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N))
+        step = (beta_final - beta_initial) / num_step
+        self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, num_step))
         self.partition_function = []
         self.internal_energy = []
         # thermal field imaginary time propagation
-        for i in range(N):
+        for i in range(num_step):
             Residual = self.CC_residue(self.H_tilde_reduce, T_amplitude)
 
-            # calculation physical density matrix
-            PDM = self.cal_physical_DM(T_amplitude)
+            if compare_energy:
+                # calculation physical density matrix
+                PDM = self.cal_physical_DM(T_amplitude)
 
-            # calculation energy from pysical density matrix
-            E_DM = self.H[(0, 0)]
-            E_DM += np.einsum('i,i->', self.H[(1, 0)], PDM[(0, 1)])
-            E_DM += np.einsum('i,i->', self.H[(0, 1)], PDM[(1, 0)])
-            E_DM += np.einsum('ij,ji->', self.H[(1, 1)], PDM[(1, 1)])
-            E_DM += 0.5 * np.einsum('ij,ji->', self.H[(2, 0)], PDM[(0, 2)])
-            E_DM += 0.5 * np.einsum('ij,ji->', self.H[(0, 2)], PDM[(2, 0)])
+                # calculation energy from pysical density matrix
+                E_DM = self.H[(0, 0)]
+                # add the constant shift in the thermal field
+                E_DM += np.einsum('ii,i,i->', self.H[(1, 1)], self.sinh_theta, self.sinh_theta)
+                E_DM += np.einsum('i,i->', self.H[(1, 0)], PDM[(0, 1)])
+                E_DM += np.einsum('i,i->', self.H[(0, 1)], PDM[(1, 0)])
+                E_DM += np.einsum('ij,ji->', self.H[(1, 1)], PDM[(1, 1)])
+                E_DM += 0.5* np.einsum('ij,ji->', self.H[(2, 0)], PDM[(0, 2)])
+                E_DM += 0.5 * np.einsum('ij,ji->', self.H[(0, 2)], PDM[(2, 0)])
 
             # partition function
             Z = np.exp(T_amplitude[0])
@@ -462,15 +493,20 @@ class vibronic_model_hamiltonian(object):
             E = Residual[0]
             self.internal_energy.append(E)
 
-            # calculation two ways of the energy calculations
-            print("E_CC:{:}".format(E))
-            print("E_DM:{:}".format(E_DM))
-            assert np.allclose(E, E_DM)
+            if compare_energy:
+                # calculation two ways of the energy calculations
+                print("E_CC:{:}".format(E))
+                print("E_DM:{:}".format(E_DM))
+                assert np.allclose(E, E_DM)
+
             # update amplitudes
             T_amplitude[0] -= Residual[0] * step
             T_amplitude[1] -= Residual[1] * step
             T_amplitude[2] -= Residual[2] * step
             print("step {:}:".format(i))
+            print("max t_0 amplitude:{:}".format(T_amplitude[0]))
+            print("max t_1 amplitude:{:}".format(abs(T_amplitude[1]).max()))
+            print("max t_2 amplitude:{:}".format(abs(T_amplitude[2]).max()))
             print("Temperature: {:} K".format(self.temperature_grid[i]))
             print("thermal internal energy: {:} ev-1".format(E))
             print("partition function: {:}".format(Z))
