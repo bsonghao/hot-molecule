@@ -213,7 +213,7 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def _map_initial_T_amplitude(self, T_initial, T_ref):
+    def _map_initial_T_amplitude(self, T_initial):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
 
         def cal_energy(beta):
@@ -249,8 +249,8 @@ class vibronic_model_hamiltonian(object):
             t_2 = np.zeros([2 * N, 2 * N])
 
             # enter initial t_2 for ab block
-            t_2[N:, :N] += np.diag(BE_occ / self.cosh_theta / self.sinh_theta)
-            t_2[:N, N:] += np.diag(BE_occ / self.cosh_theta / self.sinh_theta)
+            t_2[N:, :N] += np.diag((BE_occ - self.sinh_theta**2 - np.ones(N)) / self.cosh_theta / self.sinh_theta)
+            t_2[:N, N:] += np.diag((BE_occ - self.cosh_theta**2) / self.cosh_theta / self.sinh_theta)
 
             # symmetrize t_2 amplitude
             t_2_new = np.zeros_like(t_2)
@@ -261,18 +261,11 @@ class vibronic_model_hamiltonian(object):
 
         N = self.N
         beta_initial = 1. / (self.Kb * T_initial)
-        beta_ref = 1. / (self.Kb * T_ref)
 
         # calculation BE occupation number at initial beta
-        BE_occ_initial = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_initial * self.Freq))
-        # calculation BE occupation number at beta for TF reference state
-        BE_occ_ref = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_ref * self.Freq))
+        BE_occ = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_initial * self.Freq))
 
-        # calculate relative BE occupation number
-        BE_occ = BE_occ_initial.copy()
-        BE_occ -= BE_occ_ref
-
-        print("relative occupation number:{:}".format(BE_occ))
+        print("BE occupation number:{:}".format(BE_occ))
 
 
         initial_T_amplitude = {}
@@ -451,7 +444,7 @@ class vibronic_model_hamiltonian(object):
 
         return DM
 
-    def TFCC_integration(self, output_path, T_initial, T_final, T_ref, num_step, compare_energy=True):
+    def TFCC_integration(self, output_path, T_initial, T_final, num_step, compare_energy=False):
         """
         conduct TFCC imaginary time integration to calculation thermal properties
         T_initial: initial temperature of TFCC propagation
@@ -460,7 +453,7 @@ class vibronic_model_hamiltonian(object):
         num_step: nunber of steps for numerical integration
         """
         # map initial T amplitude
-        T_amplitude, initial_energy = self._map_initial_T_amplitude(T_initial=T_initial, T_ref=T_ref)
+        T_amplitude, initial_energy = self._map_initial_T_amplitude(T_initial=T_initial)
 
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
