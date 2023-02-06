@@ -102,8 +102,8 @@ class vibronic_model_hamiltonian(object):
                                }
 
         self.H_tilde[(0, 1)] = {
-                               "a": self.sinh_theta * self.H[(0, 1)],
-                               "b": self.cosh_theta * self.H[(1, 0)]
+                               "a": self.cosh_theta * self.H[(0, 1)],
+                               "b": self.sinh_theta * self.H[(1, 0)]
                                }
 
         # quadratic terms
@@ -111,7 +111,7 @@ class vibronic_model_hamiltonian(object):
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
                                 "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
+                                "bb": np.einsum('i,j,ji->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
                                }
 
 
@@ -516,8 +516,6 @@ class vibronic_model_hamiltonian(object):
 
         # map initial amplitudes
         T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial, mix_flag=mix_flag)
-
-        os._exit(0)
 
         # create temperature grid for integration
         ## initialize auto-correlation function as an array
