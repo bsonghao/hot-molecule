@@ -11,12 +11,13 @@ import pstats
 import numpy as np
 
 # import the path to the package
-project_dir = abspath(join(dirname(__file__), '/home/paulie/hot-molecule'))
+project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule'))
 sys.path.insert(0, project_dir)
+outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
-from project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
-
+import Project
+from Project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
 
 def main():
     """main function that run TF-VECC simulation"""
@@ -32,23 +33,17 @@ def main():
 
     # quadratic coupling constant
     QCP = np.array([[0.030, 0.001],
-                    [0.001, 0.040]])
+                    [0.001, 0.040]]) * 0
 
     # frequancies (in eV)
     Freq = np.array([0.15, 0.20])
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, num_mode)
-    # model.thermal_field_transformation(Temp=10000.)
-    # model.reduce_H_tilde()
-    # model._map_initial_T_amplitude(T_initial=1000.)
-    # run FCI calculation of ACF
-    # time_FCI, ACF_FCI = model.FCI_solution(time=np.linspace(0, 100, 10001))
-    # store ACF data of FCI calculation
-    # model.store_ACF_data(time_FCI, ACF_FCI, name="ACF_single_surface_model_FCI")
-    # run VECC calculation of ACF
-    time_CC, ACF_CC = model.VECC_integration(t_final=100, num_steps=10000, CI_flag=False, mix_flag=True, proj_flag=True)
-    model.store_ACF_data(time_CC, ACF_CC, name="ACF_single_surface_model_mix_CC_CI_proj")
+    model.thermal_field_transformation(Temp=1e3)
+    model.reduce_H_tilde()
+    # model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=2e3, T_final=1e2, num_step=10000)
+    model.TFCC_integration(T_initial=1e3, T_final=1e2, num_step=100000, output_path=outputdir, CI_flag=False, mix_flag=False, proj_flag=False)
 
     return
 

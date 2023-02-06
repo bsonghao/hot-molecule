@@ -4,8 +4,6 @@ Some explanation / notes should go here
 
 """
 
-
-# system imports
 # system imports
 import io
 import time
@@ -14,6 +12,8 @@ from os.path import abspath, join, dirname, basename
 import sys
 import cProfile
 import pstats
+import itertools as it
+
 
 
 # third party imports
@@ -32,7 +32,7 @@ import opt_einsum as oe
 # import the path to the package
 project_dir = abspath(join(dirname(__file__), '/home/paulie/hot-molecule'))
 sys.path.insert(0, project_dir)
-from project.two_mode_model import model_two_mode
+
 
 
 class vibronic_model_hamiltonian(object):
@@ -79,10 +79,6 @@ class vibronic_model_hamiltonian(object):
 
         print("Boltzmann constant: {:} eV K-1".format(self.Kb))
 
-        # initialize Hamiltonian in FCI basis
-        model = model_two_mode(self.H[(0, 0)], self.H[(1, 0)], self.H[(1, 1)], self.H[(0, 2)])
-        self.H_FCI = model.sos_solution(basis_size=40)
-
         print("### End of Hamiltonian parameters ####")
 
     def thermal_field_transformation(self, Temp):
@@ -97,7 +93,7 @@ class vibronic_model_hamiltonian(object):
         self.H_tilde = dict()
 
         # constant term???
-        self.H_tilde[(0, 0)] = self.H[(0, 0)] + sum(self.sinh_theta**2)
+        self.H_tilde[(0, 0)] = self.H[(0, 0)] + np.einsum('ii,i,i->', self.H[(1, 1)], self.sinh_theta, self.sinh_theta)
 
         # linear terns
         self.H_tilde[(1, 0)] = {
@@ -144,7 +140,7 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def _map_initial_T_amplitude(self, T_initial):
+    def _map_initial_amplitude(self, T_initial, mix_flag):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
         def map_t_0_amplitude(beta):
             """map t_0 amplitude from H.O. partition function"""
@@ -152,7 +148,10 @@ class vibronic_model_hamiltonian(object):
             for i,w in enumerate(self.Freq):
                 z *= 1 / (1 - np.exp(-beta * w))
             z *= np.exp(-beta * (self.H[(0, 0)]-sum(self.LCP**2 / self.Freq)/2.))
-            t_0 = np.log(z)
+            if mix_flag:
+                t_0 = z
+            else:
+                t_0 = np.log(z)
             return t_0
 
         def map_t1_amplitude():
@@ -170,7 +169,7 @@ class vibronic_model_hamiltonian(object):
         def map_t2_amplitude():
             """map t_2 amplitude from cumulant expression of 2-RDM"""
             # initialize t2 amplitude
-            t_2 = np.zeros([2 * N, 2 * N])
+            t_2 = np.zeros([2*N, 2*N])
 
             # enter initial t_2 for ab block
             t_2[N:, :N] += np.diag((BE_occ - self.sinh_theta**2 - np.ones(N)) / self.cosh_theta / self.sinh_theta)
@@ -178,7 +177,7 @@ class vibronic_model_hamiltonian(object):
 
             # symmetrize t_2 amplitude
             t_2_new = np.zeros_like(t_2)
-            for i, j in it.product(range(2 * N), repeat=2):
+            for i, j in it.product(range(2*N), repeat=2):
                 t_2_new[i, j] = 0.5 * (t_2[i, j] + t_2[j, i])
 
             return t_2_new
@@ -187,20 +186,34 @@ class vibronic_model_hamiltonian(object):
         beta_initial = 1. / (self.Kb * T_initial)
 
         # calculation BE occupation number at initial beta
-        BE_occ = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_initial * self.Freq))
+        BE_occ = np.ones(N) / (np.ones(N) - np.exp(-beta_initial * self.Freq))
 
         print("BE occupation number:{:}".format(BE_occ))
 
-
         initial_T_amplitude = {}
-        initial_T_amplitude[0] = map_t_0_amplitude(beta_initial)
-        initial_T_amplitude[1] = map_t1_amplitude()
-        initial_T_amplitude[2] = map_t2_amplitude()
+        initial_Z_amplitude = {}
+        if not mix_flag:
+            initial_T_amplitude[0] = map_t_0_amplitude(beta_initial)
+            initial_T_amplitude[1] = map_t1_amplitude()
+            initial_T_amplitude[2] = map_t2_amplitude()
 
-        print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
-        print("initial double T amplitude:\n{:}".format(initial_T_amplitude[2]))
+            print("initial constant T ampltidue:\n{:}".format(initial_T_amplitude[0]))
+            print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
+            print("initial double T amplitude:\n{:}".format(initial_T_amplitude[2]))
+        else:
+            initial_Z_amplitude[0] = map_t_0_amplitude(beta_initial)
+            initial_T_amplitude[1] = map_t1_amplitude(beta_initial)
+            initial_Z_amplitude[2] = map_t2_amplitude(beta_initial)
 
-        return initial_T_amplitude
+            # set the result of the ampltiudes zeros
+            inital_Z_amplitude[1] = np.zeros(2*N)
+
+
+            print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
+            print("initial constant Z ampltidue:\n{:}".format(initial_Z_amplitude[0]))
+            print("initial double Z amplitude:\n{:}".format(initial_Z_amplitude[2]))
+
+        return initial_T_amplitude, initial_Z_amplitude
 
     def reduce_H_tilde(self):
         """merge the a, b blocks of the Bogliubov transformed Hamiltonian into on tensor"""
@@ -241,14 +254,13 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-
     def CC_residue(self, H_args, T_args, Z_args=None, CI_flag=False, mix_flag=False, proj_flag=False):
         """implement coupled cluster residue equations"""
         N = self.N
         if proj_flag:
-            T_proj = np.conjugate(T_args[1])
+            T_proj = T_args[1]
         else:
-            T_proj=None
+            T_proj = None
 
         def f_t_0(H, T, CI_flag=CI_flag, proj_flag=False, T_proj=None):
             """return residue R_0"""
@@ -303,7 +315,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_I"""
 
             # initialize as zero
-            R = np.zeros(N, dtype=complex)
+            R = np.zeros(2*N)
 
             # linear
             R += H[(0, 1)]
@@ -316,7 +328,7 @@ class vibronic_model_hamiltonian(object):
         def f_t_i(H, T, CI_flag=CI_flag, proj_flag=False, T_proj=None):
             """return residue R_i"""
             # initialize
-            R = np.zeros(N, dtype=complex)
+            R = np.zeros(2*N)
 
             # non zero initial value of R
             if not CI_flag:
@@ -367,7 +379,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_Ij"""
 
             # initialize
-            R = np.zeros([N, N], dtype=complex)
+            R = np.zeros([2*N, 2*N])
 
             # first term
             R += H[(1, 1)]
@@ -381,7 +393,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_IJ"""
 
             # initialize as zero
-            R = np.zeros([N, N], dtype=complex)
+            R = np.zeros([2*N, 2*N])
 
             # quadratic
             R += H[(0, 2)]
@@ -392,7 +404,7 @@ class vibronic_model_hamiltonian(object):
             """return residue R_ij"""
 
             # # initialize as zero
-            R = np.zeros([N, N], dtype=complex)
+            R = np.zeros([2*N, 2*N])
 
             # if self.hamiltonian_truncation_order >= 2:
 
@@ -494,107 +506,171 @@ class vibronic_model_hamiltonian(object):
 
             return t_residue, z_residue
 
+    def TFCC_integration(self, output_path, T_initial, T_final, num_step, CI_flag=False, mix_flag=False, proj_flag=False):
+        """
+        conduct thermal field coupled cluster imiginary time integration
+        T_initial: initial temperature of TFCC propagation
+        T_final: final temperature of TFCC propagation
+        num_step: nunber of steps for numerical integration
+        """
 
-    def VECC_integration(self, t_final, num_steps, CI_flag=False, mix_flag=False, proj_flag=False):
-        """ conduct VECC integration """
-        dtau = t_final / num_steps
-        # initialize auto-correlation function as an array
-        time = np.linspace(0., t_final, num_steps+1)
-        ACF = np.zeros(num_steps+1, dtype=complex)
+        # map initial amplitudes
+        T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial, mix_flag=mix_flag)
+
+        os._exit(0)
+
+        # create temperature grid for integration
+        ## initialize auto-correlation function as an array
+        beta_initial = 1. / (self.Kb * T_initial)
+        beta_final = 1. / (self.Kb * T_final)
+        step = (beta_final - beta_initial) / num_step
+        self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, num_step))
+
+        # create empty list to store thermal properties
+        self.partition_function = []
+        self.internal_energy = []
+
         if not mix_flag:
-            # initialize T amplitude as zeros
-            T_amplitude = {
-                       0: 0.,
-                       1: np.zeros(self.N, dtype=complex),
-                       2: np.zeros([self.N, self.N], dtype=complex)
-            }
-
             if CI_flag:
                 T_amplitude[0] = 1.
-            for i in range(num_steps+1):
-                # calculate ACF
+            for i in range(num_step):
+               # calculate CC residue
+                residue = self.CC_residue(self.H_tilde_reduce, T_amplitude, CI_flag=CI_flag, proj_flag=proj_flag)
+                # calculate thermal properties
+                E = residue[0]
+
                 if CI_flag:
-                    ACF[i] = T_amplitude[0]
+                    Z = T_amplitude[0]
                 else:
-                    ACF[i] = np.exp(T_amplitude[0])
-            # calculate CC residue
-                residue = self.CC_residue(self.H, T_amplitude, CI_flag=CI_flag, proj_flag=proj_flag)
+                    Z = np.exp(T_amplitude[0])
+
+                self.internal_energy.append(E)
+                self.partition_function.append(Z)
                 # update T amplitude
-                T_amplitude[0] -= dtau * residue[0] * 1j
-                T_amplitude[1] -= dtau * residue[1] * 1j
-                T_amplitude[2] -= dtau * residue[2] * 1j
+                T_amplitude[0] -= step * residue[0]
+                T_amplitude[1] -= step * residue[1]
+                T_amplitude[2] -= step * residue[2]
 
-                print("time:{:} ACF:{:}".format(time[i], ACF[i]))
+                print("step {:}:".format(i))
+                print("max t_0 amplitude:{:}".format(T_amplitude[0]))
+                print("max t_1 amplitude:{:}".format(abs(T_amplitude[1]).max()))
+                print("max t_2 amplitude:{:}".format(abs(T_amplitude[2]).max()))
+                print("Temperature: {:} K".format(self.temperature_grid[i]))
+                print("thermal internal energy: {:} ev".format(E))
+                print("partition function: {:}".format(Z))
 
-        else:
-            T_amplitude = {
-                       0: 0.,
-                       1: np.zeros(self.N, dtype=complex),
-                       2: np.zeros([self.N, self.N], dtype=complex)
-            }
-            Z_amplitude = {
-                       0: 1.,
-                       1: np.zeros(self.N, dtype=complex),
-                       2: np.zeros([self.N, self.N], dtype=complex)
-            }
-            for i in range(num_steps+1):
-                # calculate ACF
-                ACF[i] = Z_amplitude[0]
+        if mix_flag:
+            for i in range(num_step):
                 # calculate CC residue
-                t_residue, z_residue = self.CC_residue(self.H, T_amplitude, Z_amplitude, CI_flag=CI_flag, mix_flag=mix_flag, proj_flag=proj_flag)
+                t_residue, z_residue = self.CC_residue(self.H_tilde_reduce, T_amplitude, Z_amplitude, CI_flag=CI_flag, mix_flag=mix_flag, proj_flag=proj_flag)
+                # calculate thermal propeties
+                Z = Z_amplitude[0]
+                E = z_residue[0] / Z_amplitude[0]
+                self.partition_function.append(Z)
+                self.internal_energy.append(E)
                 # update T amplitude
-                T_amplitude[1] -= dtau * t_residue * 1j
+                T_amplitude[1] -= step * t_residue
                 # update Z amplitude
-                Z_amplitude[0] -= dtau * z_residue[0] * 1j
-                Z_amplitude[1] -= dtau * z_residue[1] * 1j
-                Z_amplitude[2] -= dtau * z_residue[2] * 1j
+                Z_amplitude[0] -= step * z_residue[0]
+                Z_amplitude[1] -= step * z_residue[1]
+                Z_amplitude[2] -= step * z_residue[2]
+
+                print("step {:}:".format(i))
+                print("max z_0 amplitude:{:}".format(Z_amplitude[0]))
+                print("max z_1 amplitude:{:}".format(abs(Z_amplitude[1]).max()))
+                print("max z_2 amplitude:{:}".format(abs(Z_amplitude[2]).max()))
+                print("max t_1 ampltiude:{:}".format(abs(T_amplitude[1]).max()))
+                print("Temperature: {:} K".format(self.temperature_grid[i]))
+                print("thermal internal energy: {:} ev-1".format(E))
+                print("partition function: {:}".format(Z))
+
                 print("time:{:} ACF:{:}".format(time[i], ACF[i]))
 
-        return time, ACF
-
-    def FCI_solution(self, time):
-        """ calculate ACF from exact diagonalization of the full Hamiltonian """
-        print('### FCI program start ###')
-        # check hermicity of Hamitlnian
-        assert np.allclose(self.H_FCI, self.H_FCI.transpose())
-        # diagonalize the full Hamiltonian
-        E, V = np.linalg.eigh(self.H_FCI)
-        print('Energy Eigenvalue')
-        for i in range(10):
-            print(E[i])
-
-        # initilize auto correlation function
-        ACF = np.zeros_like(time, dtype=complex)
-        # compute ACF
-        for n in range(40**self.N):
-            ACF += V[(0, n)] * np.exp(-E[n] * time * 1j) * V[(0, n)].conjugate()
-
-        # normalize ACF
-        ACF /= ACF[0]
-
-        print('### End of Sum Over States Program ###')
-        return time, ACF
-
-    def store_ACF_data(self, time, ACF, name):
-        """ store ACF data in a format that adapt with autospec """
-        data = {'time': time, 'Re': ACF.real, 'Im': ACF.imag, 'Abs': abs(ACF)}
-        df = pd.DataFrame(data)
-
-        # store ACF data to csv format
-        df.to_csv(name+".csv", index=False)
-
-        # store ACF data in autospec format
-        with open(name+".txt", 'w') as file:
-            file.write('#    time[fs]         Re(autocorrel)     Im(autocorrel)     Abs(autocorrel)\n')
-            tmp = df.to_records(index=False)
-            for t, Re, Im, Abs in tmp:
-                x1 = '{:.{}f}'.format(t, 8)
-                x2, x3, x4 = ['{:.{}f}'.format(e, 14) for e in (Re, Im, Abs)]
-                string = '{:>15} {:>22} {:>18} {:>18}'.format(x1, x2, x3, x4)
-                file.write(string+'\n')
+        # store data
+        thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
+        df = pd.DataFrame(thermal_data)
+        df.to_csv(output_path+"thermal_data_TFCC.csv", index=False)
         return
 
+    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, num_step=10000):
+        """calculation thermal properties through sum over states"""
+        def construct_full_Hamitonian():
+            """construct full Hamiltonian in H.O. basis"""
+            Hamiltonian = np.zeros((basis_size, basis_size, basis_size, basis_size))
+            for a_1 in range(basis_size):
+                for a_2 in range(basis_size):
+                    for b_1 in range(basis_size):
+                        for b_2 in range(basis_size):
+                            if a_1 == b_1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 0)]
+                                Hamiltonian[a_1, a_2, b_1, b_2] += self.H[(1, 1)][0, 0]*(b_1)+self.H[(1, 1)][1, 1]*(b_2)
+                            if a_1 == b_1+1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 1)][0, 1]*np.sqrt(b_1+1)*np.sqrt(b_2)
+                            if a_1 == b_1-1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 1)][1, 0]*np.sqrt(b_1)*np.sqrt(b_2+1)
+                            if a_1 == b_1+1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 0)][0]*np.sqrt(b_1+1)
+                            if a_1 == b_1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(1, 0)][1]*np.sqrt(b_2+1)
+                            if a_1 == b_1-1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 1)][0]*np.sqrt(b_1)
+                            if a_1 == b_1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 1)][1]*np.sqrt(b_2)
+                            if a_1 == b_1+2 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][0, 0]*np.sqrt(b_1+1)*np.sqrt(b_1+2)
+                            if a_1 == b_1+1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(2, 0)][0, 1] + self.H[(2, 0)][1, 0])*np.sqrt(b_1+1)*np.sqrt(b_2+1)
+                            if a_1 == b_1 and a_2 == b_2+2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][1, 1]*np.sqrt(b_2+1)*np.sqrt(b_2+2)
+                            if a_1 == b_1-2 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][0, 0]*np.sqrt(b_1)*np.sqrt(b_1-1)
+                            if a_1 == b_1-1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(0, 2)][0, 1] + self.H[(0, 2)][1, 0])*np.sqrt(b_1)*np.sqrt(b_2)
+                            if a_1 == b_1 and a_2 == b_2-2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][1, 1]*np.sqrt(b_2)*np.sqrt(b_2-1)
 
-    def TFCC_integration(self):
-        """conduct TFCC imaginary time integration to calculation thermal perperties"""
+            Hamiltonian = Hamiltonian.reshape(basis_size**self.N, basis_size**self.N)
+
+            return Hamiltonian
+
+        def Cal_partition_function(E, T):
+            """ compute partition function """
+            Z = sum(np.exp(-E / (self.Kb * T)))
+            return Z
+
+        def Cal_thermal_internal_energy(E, T, Z):
+            """ compute thermal_internal_energy """
+            energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
+            return energy
+
+        print("### Sum over states program starts! ###")
+        beta_initial = 1. / (T_initial * self.Kb)
+        beta_final = 1. / (T_final * self.Kb)
+        T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, num_step))
+        self.T_FCI = T_grid
+        # contruct Hamiltonian in H.O. basis
+        H = construct_full_Hamitonian()
+        # check Hermicity of the Hamitonian in H. O. basis
+        assert np.allclose(H, H.transpose())
+        # diagonalize the Hamiltonian
+        E, V = np.linalg.eigh(H)
+        # store eigenvector and eigenvalues as class instances
+        self.E_val = E
+        self.V_val = V
+        # calculate partition function
+        partition_function = np.zeros_like(T_grid)
+        for i, T in enumerate(T_grid):
+            partition_function[i] = Cal_partition_function(E, T)
+
+        # calculate thermal internal energy
+        thermal_internal_energy = np.zeros_like(T_grid)
+        for i, T in enumerate(T_grid):
+            thermal_internal_energy[i] = Cal_thermal_internal_energy(E, T, partition_function[i])
+
+        # store thermal data
+        thermal_data = {"T(K)": T_grid, "partition function": partition_function, "internal energy": thermal_internal_energy}
+        df = pd.DataFrame(thermal_data)
+        df.to_csv(output_path+"thermal_data_FCI.csv", index=False)
+        print("### sum over state program terminate normally ###")
+
         return
