@@ -69,8 +69,8 @@ class vibronic_model_hamiltonian(object):
         self.H[(1, 1)] = np.diag(freq)
         self.H[(1, 1)] += QCP
 
-        self.H[(2, 0)] = QCP / 2
-        self.H[(0, 2)] = QCP / 2
+        self.H[(2, 0)] = QCP
+        self.H[(0, 2)] = QCP
 
         print("number of vibrational mode {:}".format(self.N))
         print("##### Hamiltonian parameters ######")
@@ -118,19 +118,21 @@ class vibronic_model_hamiltonian(object):
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
                                }
 
+
         self.H_tilde[(2, 0)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(2, 0)]),
                                 "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
-                                "ba": np.zeros_like(self.H[2, 0]),
+                                "ba": np.einsum('i,j,ji->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(0, 2)]),
                                }
 
         self.H_tilde[(0, 2)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "ab": np.zeros_like(self.H[(0, 2)]),
+                                "ab": np.einsum('i,j,ji->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
                                 "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(2, 0)])
                                }
+
 
         print("###### Bogliubov transformed Hamiltonian ########")
         for rank in self.H_tilde.keys():
@@ -144,35 +146,59 @@ class vibronic_model_hamiltonian(object):
 
     def _map_initial_T_amplitude(self, T_initial):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
+        def map_t_0_amplitude(beta):
+            """map t_0 amplitude from H.O. partition function"""
+            z = 1
+            for i,w in enumerate(self.Freq):
+                z *= 1 / (1 - np.exp(-beta * w))
+            z *= np.exp(-beta * (self.H[(0, 0)]-sum(self.LCP**2 / self.Freq)/2.))
+            t_0 = np.log(z)
+            return t_0
+
         def map_t1_amplitude():
-            """map t_1 amplitude from linear coupling constant"""
+            """
+            map t_1 amplitude from linear coupling constant
+            """
             # initialize t1 amplitude
+            X_i = self.H[(1, 0)] / self.Freq
             t_1 = np.zeros(2 * N)
-            t_1[:N] += self.LCP / np.sqrt(2) / (2 * self.cosh_theta)
-            t_1[N:] += self.LCP / np.sqrt(2) / (2 * self.sinh_theta)
+            t_1[:N] -= X_i / self.cosh_theta
+            t_1[N:] -= X_i / self.sinh_theta
 
             return t_1
 
-        def map_t2_amplitude(RDM_2, t1):
+        def map_t2_amplitude():
             """map t_2 amplitude from cumulant expression of 2-RDM"""
             # initialize t2 amplitude
             t_2 = np.zeros([2 * N, 2 * N])
-            t_2[N:, N:] += RDM_2
-            t_2 -= np.einsum('p,q->pq', t1, t1)
 
-            return t_2
+            # enter initial t_2 for ab block
+            t_2[N:, :N] += np.diag((BE_occ - self.sinh_theta**2 - np.ones(N)) / self.cosh_theta / self.sinh_theta)
+            t_2[:N, N:] += np.diag((BE_occ - self.cosh_theta**2) / self.cosh_theta / self.sinh_theta)
+
+            # symmetrize t_2 amplitude
+            t_2_new = np.zeros_like(t_2)
+            for i, j in it.product(range(2 * N), repeat=2):
+                t_2_new[i, j] = 0.5 * (t_2[i, j] + t_2[j, i])
+
+            return t_2_new
 
         N = self.N
         beta_initial = 1. / (self.Kb * T_initial)
-        # calculate two particle density matrice from Bose-Einstein statistics
-        two_RDM = np.diag(np.exp(beta_initial * self.Freq))
+
+        # calculation BE occupation number at initial beta
+        BE_occ = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_initial * self.Freq))
+
+        print("BE occupation number:{:}".format(BE_occ))
+
 
         initial_T_amplitude = {}
-        initial_T_amplitude["t1"] = map_t1_amplitude()
-        initial_T_amplitude["t2"] = map_t2_amplitude(two_RDM, initial_T_amplitude['t1'])
+        initial_T_amplitude[0] = map_t_0_amplitude(beta_initial)
+        initial_T_amplitude[1] = map_t1_amplitude()
+        initial_T_amplitude[2] = map_t2_amplitude()
 
-        print("initial single T amplitude:\n{:}".format(initial_T_amplitude["t1"]))
-        print("initial double T amplitude:\n{:}".format(initial_T_amplitude["t2"]))
+        print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
+        print("initial double T amplitude:\n{:}".format(initial_T_amplitude[2]))
 
         return initial_T_amplitude
 
