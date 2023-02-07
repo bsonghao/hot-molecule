@@ -43,7 +43,7 @@ def main():
     model.thermal_field_transformation(Temp=1e3)
     model.reduce_H_tilde()
     model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=2e3, T_final=1e2, num_step=10000)
-    model.TFCC_integration(T_initial=2ae3, T_final=1e2, num_step=100000, output_path=outputdir, CI_flag=False, mix_flag=False, proj_flag=False)
+    model.TFCC_integration(T_initial=2e3, T_final=1e2, num_step=100000, output_path=outputdir, CI_flag=False, mix_flag=True, proj_flag=True)
 
     return
 

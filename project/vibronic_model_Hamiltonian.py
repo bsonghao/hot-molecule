@@ -202,11 +202,11 @@ class vibronic_model_hamiltonian(object):
             print("initial double T amplitude:\n{:}".format(initial_T_amplitude[2]))
         else:
             initial_Z_amplitude[0] = map_t_0_amplitude(beta_initial)
-            initial_T_amplitude[1] = map_t1_amplitude(beta_initial)
-            initial_Z_amplitude[2] = map_t2_amplitude(beta_initial)
+            initial_T_amplitude[1] = map_t1_amplitude()
+            initial_Z_amplitude[2] = map_t2_amplitude()
 
             # set the result of the ampltiudes zeros
-            inital_Z_amplitude[1] = np.zeros(2*N)
+            initial_Z_amplitude[1] = np.zeros(2*N)
 
 
             print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
@@ -278,7 +278,8 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('k,k->', H[(0, 1)], T[1])
 
             # quadratic
-            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[2])
+            if not mix_flag:
+                R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[2])
 
             if not CI_flag:
                 R += 0.5 * np.einsum('kl,k,l->', H[(0, 2)], T[1], T[1])
@@ -342,8 +343,9 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('ik,k->i', H[(1, 1)], T[1])
 
             # quadratic
-            R += np.einsum('k,ki->i', H[(0, 1)], T[2])
-            if not CI_flag:
+            if not mix_flag:
+                R += np.einsum('k,ki->i', H[(0, 1)], T[2])
+            if not CI_flag and not mix_flag:
                 R += np.einsum('kl,k,li->i', H[(0, 2)], T[1], T[2])
 
             if proj_flag:
@@ -385,7 +387,8 @@ class vibronic_model_hamiltonian(object):
             R += H[(1, 1)]
 
             # quadratic
-            R += np.einsum('ik,kj->ij', H[(0, 2)], T[2])
+            if not mix_flag:
+                R += np.einsum('ik,kj->ij', H[(0, 2)], T[2])
 
             return R
 
@@ -416,10 +419,10 @@ class vibronic_model_hamiltonian(object):
                 R += H[(0, 0)] * T[2]
                 R += np.einsum('i,j->ij', H[(1, 0)], T[1])
                 R += np.einsum('j,i->ij', H[(1, 0)], T[1])
-
-            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
-            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
-            if not CI_flag:
+            if not mix_flag:
+                R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
+                R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
+            if not CI_flag and not mix_flag:
                 R += 0.5 * np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2], T[2])
                 R += 0.5 * np.einsum('kl,kj,li->ij', H[(0, 2)], T[2], T[2])
 
@@ -504,7 +507,7 @@ class vibronic_model_hamiltonian(object):
                 z_residue[0] -= X * 0.5 * np.einsum('l,m,lm->', T_proj, T_proj, Z_args[2])
                 z_residue[0] -= 0.5 * np.einsum('k,l,kl->', T_proj, T_proj, z_residue[2])
 
-            return t_residue, z_residue
+            return t_residue, z_residue, net_R_0
 
     def TFCC_integration(self, output_path, T_initial, T_final, num_step, CI_flag=False, mix_flag=False, proj_flag=False):
         """
@@ -533,7 +536,7 @@ class vibronic_model_hamiltonian(object):
                 T_amplitude[0] = 1.
             for i in range(num_step):
                # calculate CC residue
-                residue = self.CC_residue(self.H_tilde_reduce, T_amplitude, CI_flag=CI_flag, proj_flag=proj_flag)
+                residue = self.CC_residue(self.H_tilde_reduce, T_amplitude, mix_flag=mix_flag, CI_flag=CI_flag, proj_flag=proj_flag)
                 # calculate thermal properties
                 E = residue[0]
 
@@ -557,10 +560,10 @@ class vibronic_model_hamiltonian(object):
                 print("thermal internal energy: {:} ev".format(E))
                 print("partition function: {:}".format(Z))
 
-        if mix_flag:
+        else:
             for i in range(num_step):
                 # calculate CC residue
-                t_residue, z_residue = self.CC_residue(self.H_tilde_reduce, T_amplitude, Z_amplitude, CI_flag=CI_flag, mix_flag=mix_flag, proj_flag=proj_flag)
+                t_residue, z_residue, net_R_0 = self.CC_residue(self.H_tilde_reduce, T_amplitude, Z_amplitude, CI_flag=CI_flag, mix_flag=mix_flag, proj_flag=proj_flag)
                 # calculate thermal propeties
                 Z = Z_amplitude[0]
                 E = z_residue[0] / Z_amplitude[0]
@@ -582,12 +585,17 @@ class vibronic_model_hamiltonian(object):
                 print("thermal internal energy: {:} ev-1".format(E))
                 print("partition function: {:}".format(Z))
 
-                print("time:{:} ACF:{:}".format(time[i], ACF[i]))
-
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"thermal_data_TFCC.csv", index=False)
+        if mix_flag and not proj_flag:
+            name = "thermal_data_TFCC_mix.csv"
+        elif proj_flag:
+            name = "thermal_data_TFCC_mix_proj.csv"
+        else:
+            name = "thermal_data_TFCC.csv"
+
+        df.to_csv(output_path+name, index=False)
         return
 
     def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, num_step=10000):
