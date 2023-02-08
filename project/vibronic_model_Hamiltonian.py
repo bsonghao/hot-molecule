@@ -203,10 +203,11 @@ class vibronic_model_hamiltonian(object):
         else:
             initial_Z_amplitude[0] = map_t_0_amplitude(beta_initial)
             initial_T_amplitude[1] = map_t1_amplitude()
-            initial_Z_amplitude[2] = map_t2_amplitude()
+            initial_T_amplitude[2] = map_t2_amplitude()
 
-            # set the result of the ampltiudes zeros
+            # set the result of the ampltiudes zeros and ones
             initial_Z_amplitude[1] = np.zeros(2*N)
+            initial_Z_amplitude[2] = np.zeros([2*N, 2*N])
 
 
             print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
@@ -214,6 +215,12 @@ class vibronic_model_hamiltonian(object):
             print("initial double Z amplitude:\n{:}".format(initial_Z_amplitude[2]))
 
         return initial_T_amplitude, initial_Z_amplitude
+
+    def cal_energy(beta):
+        """calculate analytical expression of the thermal internal energy at given beta"""
+        E = self.H[(0, 0)]-sum(self.LCP**2 / self.Freq)/2.
+        E += sum(self.Freq * np.exp(-beta * self.Freq) / (np.ones(N) - np.exp(-beta * self.Freq)))
+        return E
 
     def reduce_H_tilde(self):
         """merge the a, b blocks of the Bogliubov transformed Hamiltonian into on tensor"""
@@ -278,8 +285,7 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('k,k->', H[(0, 1)], T[1])
 
             # quadratic
-            if not mix_flag:
-                R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[2])
+            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[2])
 
             if not CI_flag:
                 R += 0.5 * np.einsum('kl,k,l->', H[(0, 2)], T[1], T[1])
@@ -343,9 +349,8 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('ik,k->i', H[(1, 1)], T[1])
 
             # quadratic
-            if not mix_flag:
-                R += np.einsum('k,ki->i', H[(0, 1)], T[2])
-            if not CI_flag and not mix_flag:
+            R += np.einsum('k,ki->i', H[(0, 1)], T[2])
+            if not CI_flag:
                 R += np.einsum('kl,k,li->i', H[(0, 2)], T[1], T[2])
 
             if proj_flag:
@@ -387,8 +392,9 @@ class vibronic_model_hamiltonian(object):
             R += H[(1, 1)]
 
             # quadratic
-            if not mix_flag:
-                R += np.einsum('ik,kj->ij', H[(0, 2)], T[2])
+            R += np.einsum('ik,kj->ij', H[(0, 2)], T[2])
+            R += np.einsum('jk,ki->ij', H[(0, 2)], T[2])
+
 
             return R
 
@@ -419,10 +425,10 @@ class vibronic_model_hamiltonian(object):
                 R += H[(0, 0)] * T[2]
                 R += np.einsum('i,j->ij', H[(1, 0)], T[1])
                 R += np.einsum('j,i->ij', H[(1, 0)], T[1])
-            if not mix_flag:
-                R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
-                R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
-            if not CI_flag and not mix_flag:
+
+            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
+            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
+            if not CI_flag:
                 R += 0.5 * np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2], T[2])
                 R += 0.5 * np.einsum('kl,kj,li->ij', H[(0, 2)], T[2], T[2])
 
@@ -458,15 +464,17 @@ class vibronic_model_hamiltonian(object):
         else:
             # similarity transform the Hamiltonian
             sim_h = {}
-            sim_h[(0, 0)] = f_t_0(H_args, T_args)
+            sim_h[(0, 0)] = f_t_0(H_args, T_args, CI_flag=False)
             sim_h[(0, 1)] = f_t_I(H_args, T_args)
-            sim_h[(1, 0)] = f_t_i(H_args, T_args)
+            sim_h[(1, 0)] = f_t_i(H_args, T_args, CI_flag=False)
             sim_h[(1, 1)] = f_t_Ij(H_args, T_args)
             sim_h[(0, 2)] = f_t_IJ(H_args, T_args)
-            sim_h[(2, 0)] = f_t_ij(H_args, T_args)
+            sim_h[(2, 0)] = f_t_ij(H_args, T_args, CI_flag=False)
 
-            # equate t_1 residue to (1, 0) block of the similairty transformed Hamiltonian
-            t_residue = sim_h[(1, 0)].copy()
+            # Equate T residue to be the matrix elements of the similairty transformed Hamiltonian
+            t_residue = {}
+            t_residue[1] = sim_h[(1, 0)]
+            t_residue[2] = sim_h[(2, 0)]
 
             # calculate net residue based on similairty transformed Hamiltnoian
             net_R_0 = f_t_0(sim_h, Z_args, CI_flag=True, proj_flag=proj_flag, T_proj=T_proj)
@@ -479,8 +487,10 @@ class vibronic_model_hamiltonian(object):
 
             # double Z residue
             z_residue[2] = net_R_2
-            z_residue[2] -= np.einsum('i,j->ij', t_residue, Z_args[1])
-            z_residue[2] -= np.einsum('j,i->ij', t_residue, Z_args[1])
+            z_residue[2] -= np.einsum('i,j->ij', t_residue[1], Z_args[1])
+            z_residue[2] -= np.einsum('j,i->ij', t_residue[1], Z_args[1])
+            z_residue[2] -= t_residue[2] * Z_args[0]
+
             if proj_flag:
                 X = np.einsum('k,k->', T_proj, t_residue)
                 z_residue[2] -= X * Z_args[2]
@@ -490,7 +500,7 @@ class vibronic_model_hamiltonian(object):
 
             # single Z residue
             z_residue[1] = net_R_1
-            z_residue[1] -= t_residue * Z_args[0]
+            z_residue[1] -= t_residue[1] * Z_args[0]
             if proj_flag:
                 z_residue[1] -= X * Z_args[1]
                 z_residue[1] -= np.einsum('k,i,k->i', T_proj, t_residue, Z_args[1])
@@ -566,11 +576,12 @@ class vibronic_model_hamiltonian(object):
                 t_residue, z_residue, net_R_0 = self.CC_residue(self.H_tilde_reduce, T_amplitude, Z_amplitude, CI_flag=CI_flag, mix_flag=mix_flag, proj_flag=proj_flag)
                 # calculate thermal propeties
                 Z = Z_amplitude[0]
-                E = z_residue[0] / Z_amplitude[0]
+                E = z_residue[0]/ Z_amplitude[0]
                 self.partition_function.append(Z)
                 self.internal_energy.append(E)
                 # update T amplitude
-                T_amplitude[1] -= step * t_residue
+                T_amplitude[1] -= step * t_residue[1]
+                T_amplitude[2] -= step * t_residue[2]
                 # update Z amplitude
                 Z_amplitude[0] -= step * z_residue[0]
                 Z_amplitude[1] -= step * z_residue[1]
@@ -581,10 +592,10 @@ class vibronic_model_hamiltonian(object):
                 print("max z_1 amplitude:{:}".format(abs(Z_amplitude[1]).max()))
                 print("max z_2 amplitude:{:}".format(abs(Z_amplitude[2]).max()))
                 print("max t_1 ampltiude:{:}".format(abs(T_amplitude[1]).max()))
+                print("max t_2 amplitude:{:}".format(abs(T_amplitude[2]).max()))
                 print("Temperature: {:} K".format(self.temperature_grid[i]))
-                print("thermal internal energy: {:} ev-1".format(E))
+                print("thermal internal energy: {:} ev".format(E))
                 print("partition function: {:}".format(Z))
-
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
