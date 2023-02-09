@@ -57,6 +57,7 @@ def main():
     # Bogoliubov transform the Hamiltonian
     model.thermal_field_transform(T_ref=1e3)
     model.reduce_H_tilde()
+    model._map_initial_amplitude(T_initial=2e3)
     # model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=2000, T_final=100, N_step=10000, compare_with_TNOE=False)
     # model.TFCC_integration(T_initial=1e4, T_final=1e3, N_step=10000, output_path=outputdir)
     # model._map_initial_amplitude(T_initial=1e4)

@@ -298,7 +298,7 @@ class vibronic_model_hamiltonian(object):
 
     def _map_initial_amplitude(self, T_initial=1000):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
-        def map_z_0_amplitude(beta):
+        def map_z0_amplitude(beta):
             """map t_0 amplitude from H.O. partition function"""
             z_0 = np.eye(A)
             for a in range(A):
@@ -308,54 +308,52 @@ class vibronic_model_hamiltonian(object):
 
             return z_0
 
-        def map_t_1_amplitude():
+        def map_t1_amplitude():
             """map initial t_1 and t^1 amplitude from linear displacements"""
             # initialzie t_i and t_I tensors
-            t_i = np.zeros([A, N])
-            t_I = np.zeros([A, N])
-            for a in range(A):
-                t_i[a, :] = -self.H[(0, 1)][a, a, :] / self.Freq
-                t_I[a, :] = -self.H[(1, 0)][a, a, :] / self.Freq
+            t_i = np.zeros([A, 2*N])
+            for x in range(A):
+                t_i[x, :N] -= self.H[(0, 1)][x, x, :] / self.Freq / self.cosh_theta
+                t_i[x, N:] -= self.H[(0, 1)][x, x, :] / self.Freq / self.sinh_theta
 
-            return t_i, t_I
-        def map_t11_amplitude(beta):
-            """map t_11 amplitude from Bose-Einstein occupation number"""
-            # initialize t11 amplitude
-            t_11 = np.zeros([A, N, N])
-            for a, i in it.product(range(A), range(N)):
-                t_11[a, i, i] = 1 / (np.exp(beta * self.Freq[i]) - 1)
-            return t_11
+            return t_i
+
+        def map_t2_amplitude():
+            """map t_2 amplitude from BE statistics and cumulant expression of 2-RDM"""
+            # initialize t2 amplitude
+            t_2 = np.zeros([A, 2 * N, 2 * N])
+
+            # enter initial t_2 for ab block
+            for x in range(A):
+                t_2[x, N:, :N] += np.diag((BE_occ - self.sinh_theta**2 - np.ones(N)) / self.cosh_theta / self.sinh_theta)
+                t_2[x, :N, N:] += np.diag((BE_occ - self.cosh_theta**2) / self.cosh_theta / self.sinh_theta)
+
+            # symmetrize t_2 amplitude
+            t_2_new = np.zeros_like(t_2)
+            for x in range(N):
+                for i, j in it.product(range(2 * N), repeat=2):
+                    t_2_new[x, i, j] = 0.5 * (t_2[x, i, j] + t_2[x, j, i])
+
+            return t_2_new
 
         N, A = self.N, self.A
         beta_initial = 1. / (self.Kb * T_initial)
 
-        # map linear amplitude
-        t_i, t_I = map_t_1_amplitude()
+        # calculation BE occupation number at initial beta
+        BE_occ = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_initial * self.Freq))
+        print("BE occupation number:{:}".format(BE_occ))
 
+        # map initial T amplitudes
         initial_T_amplitude = {}
+        initial_T_amplitude[1] = map_t1_amplitude()
+        initial_T_amplitude[2] = map_t2_amplitude()
 
-        # initialize (1, 0) and (0, 1) T amplitude from linear displacements
-        initial_T_amplitude[(1, 0)] = t_I
-        initial_T_amplitude[(0, 1)] = t_i
-        # initialize (0 ,0) and (1, 1) T amplitude from high T limit of BE statistics
-        initial_T_amplitude[(1, 1)] = map_t11_amplitude(beta_initial)
 
-        # initialize the rest of T amplitudes to be zeros
-        initial_T_amplitude[(2, 0)] = np.zeros([A, N, N])
-        initial_T_amplitude[(0, 2)] = np.zeros([A, N, N])
-
-        initial_Z_amplitude = {}
-
-        # initialize (0, 0) block of the Z amplitude from D.H.O
-        initial_Z_amplitude[(0, 0)] = map_z_0_amplitude(beta_initial)
-
-        # initializae rest of the Z amplitude to be zeros
-        initial_Z_amplitude[(1, 0)] = np.zeros([A, A, N])
-        initial_Z_amplitude[(0, 1)] = np.zeros([A, A, N])
-
-        initial_Z_amplitude[(1, 1)] = np.zeros([A, A, N, N])
-        initial_Z_amplitude[(2, 0)] = np.zeros([A, A, N, N])
-        initial_Z_amplitude[(0, 2)] = np.zeros([A, A, N, N])
+        # map initial Z amplitudes
+        initial_Z_amplitude={}
+        initial_Z_amplitude[0] = map_z0_amplitude(beta_initial)
+        initial_Z_amplitude[1] = np.zeros([A, A, 2*N])
+        initial_Z_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
 
         print("### initialize T amplitude ###")
         for block in initial_T_amplitude.keys():
