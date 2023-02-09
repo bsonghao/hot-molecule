@@ -393,8 +393,6 @@ class vibronic_model_hamiltonian(object):
 
             # quadratic
             R += np.einsum('ik,kj->ij', H[(0, 2)], T[2])
-            R += np.einsum('jk,ki->ij', H[(0, 2)], T[2])
-
 
             return R
 

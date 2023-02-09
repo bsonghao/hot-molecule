@@ -42,7 +42,7 @@ def main():
     model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, num_mode)
     model.thermal_field_transformation(Temp=1e3)
     model.reduce_H_tilde()
-    # model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=2e3, T_final=1e2, num_step=10000)
+    model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=2e3, T_final=1e2, num_step=10000)
     model.TFCC_integration(T_initial=2e3, T_final=1e2, num_step=100000, output_path=outputdir, CI_flag=False, mix_flag=True, proj_flag=False)
 
     return
