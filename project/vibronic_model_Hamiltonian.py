@@ -264,6 +264,8 @@ class vibronic_model_hamiltonian(object):
             energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
+        print("### Start sum over state calculation! ###")
+
         if compare_with_TNOE:
             T_grid = self.temperature_grid
         else:
@@ -293,7 +295,7 @@ class vibronic_model_hamiltonian(object):
         thermal_data = {"T(K)": T_grid, "partition function": partition_function, "internal energy": thermal_internal_energy}
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"thermal_data_FCI.csv", index=False)
-
+        print("### Sum over state calculation teminated gracefully! ###")
         return
 
     def _map_initial_amplitude(self, T_initial=1000):
@@ -381,21 +383,11 @@ class vibronic_model_hamiltonian(object):
             R += H[(0, 0)]
 
             # linear
-            R += np.einsum('abk,k->ab', H[(0, 1)], T[(1, 0)])
+            R += np.einsum('abk,k->ab', H[(0, 1)], T[1])
 
             # quadratic
-            R += 0.5 * np.einsum('abkl,kl->ab', H[(0, 2)], T[(2, 0)])
-            R += 0.5 * np.einsum('abkl,k,l->ab', H[(0, 2)], T[(1, 0)], T[(1, 0)])
-
-            # terms associated with thermal
-
-            # Linear
-            R += np.einsum('abkl,lk->ab', H[(1, 1)], T[(1, 1)])
-            R += np.einsum('abk,k->ab', H[(1, 0)], T[(0, 1)])
-            R += 0.5 * np.einsum('abkl,kl->ab', H[(2, 0)], T[(0, 2)])
-            # quadratic
-            R += np.einsum('abkl,k,l->ab', H[(1, 1)], T[(0, 1)], T[(1, 0)])
-            R += 0.5 * np.einsum('abkl,k,l->ab', H[(2, 0)], T[(0, 1)], T[(0, 1)])
+            R += 0.5 * np.einsum('abkl,kl->ab', H[(0, 2)], T[2])
+            R += 0.5 * np.einsum('abkl,k,l->ab', H[(0, 2)], T[1], T[1])
 
             return R
 
@@ -403,25 +395,13 @@ class vibronic_model_hamiltonian(object):
             """return residue R_I: (0, 1) block"""
 
             # initialize as zero
-            R = np.zeros([A, A, N])
+            R = np.zeros([A, A, 2*N])
 
             # linear
             R += H[(0, 1)]
 
             # quadratic
-            R += np.einsum('abik,k->abi', H[(0, 2)], T[(1, 0)])
-
-            # terms associated with thermal
-
-            # Linear
-            R += np.einsum('abki,k->abi', H[(1, 1)], T[(0, 1)])
-            R += np.einsum('abk,ki->abi', H[(1, 0)], T[(0, 2)])
-            R += np.einsum('abk,ki->abi', H[(0, 1)], T[(1, 1)])
-            # quadratic
-            R += np.einsum('ablk,ki,l->abi', H[(1, 1)], T[(1, 1)], T[0, 1])
-            R += np.einsum('ablk,k,li->abi', H[(1, 1)], T[(1, 0)], T[(0, 2)])
-            R += np.einsum('abkl,k,li->abi', H[(0, 2)], T[(1, 0)], T[(1, 1)])
-            R += np.einsum('abkl,k,li->abi', H[(2, 0)], T[(0, 1)], T[(0, 2)])
+            R += np.einsum('abik,k->abi', H[(0, 2)], T[1])
 
             return R
 
@@ -429,28 +409,17 @@ class vibronic_model_hamiltonian(object):
             """return residue R_i: (1, 0) block"""
 
             # initialize
-            R = np.zeros([A, A, N])
+            R = np.zeros([A, A, 2*N])
 
             # non zero initial value of R
             R += H[(1, 0)]
 
             # linear
-            R += np.einsum('abik,k->abi', H[(1, 1)], T[(1, 0)])
+            R += np.einsum('abik,k->abi', H[(1, 1)], T[1])
 
             # quadratic
-            R += np.einsum('abk,ki->abi', H[(0, 1)], T[(2, 0)])
-            R += np.einsum('abkl,k,li->abi', H[(0, 2)], T[(1, 0)], T[(2, 0)])
-
-            # terms associated with thermal
-
-            # linear
-            R += np.einsum('abk,ik->abi', H[(1, 0)], T[(1, 1)])
-            R += np.einsum('abki,k->abi', H[(2, 0)], T[(0, 1)])
-
-            # quadratic
-            R += np.einsum('ablk,il,k->abi', H[(1, 1)], T[(1, 1)], T[(1, 0)])
-            R += np.einsum('ablk,l,ki->abi', H[(1, 1)], T[(0, 1)], T[(2, 0)])
-            R += np.einsum('abkl,k,il->abi', H[(2, 0)], T[(0, 1)], T[(1, 1)])
+            R += np.einsum('abk,ki->abi', H[(0, 1)], T[2])
+            R += np.einsum('abkl,k,li->abi', H[(0, 2)], T[1], T[2])
 
             return R
 
@@ -458,26 +427,13 @@ class vibronic_model_hamiltonian(object):
             """return residue R_Ij: (1, 1) block"""
 
             # initialize
-            R = np.zeros([A, A, N, N])
+            R = np.zeros([A, A, 2*N, 2*N])
 
             # first term
             R += H[(1, 1)]
 
             # quadratic
-            R += np.einsum('abjk,ki->abij', H[(0, 2)], T[2, 0])
-
-            # terms associated with thermal
-
-            # linear
-            R += np.einsum('abkj,ik->abij', H[(1, 1)], T[(1, 1)])
-            R += np.einsum('abik,kj->abij', H[(1, 1)], T[(1, 1)])
-            R += np.einsum('abik,jk->abij', H[(2, 0)], T[(0, 2)])
-
-            # quadratic
-            R += np.einsum('ablk,kj,il->abij', H[(1, 1)], T[(1, 1)], T[(1, 1)])
-            R += np.einsum('abkl,kj,li->abij', H[(1, 1)], T[(0, 2)], T[(2, 0)])
-            R += np.einsum('abkl,lj,ik->abij', H[(2, 0)], T[(0, 2)], T[(1, 1)])
-            R += np.einsum('abkl,li,kj->abij', H[(0, 2)], T[(2, 0)], T[(1, 1)])
+            R += np.einsum('abjk,ki->abij', H[(0, 2)], T[2])
 
             return R
 
@@ -485,22 +441,10 @@ class vibronic_model_hamiltonian(object):
             """return residue R_IJ: (0, 2) block"""
 
             # initialize as zero
-            R = np.zeros([A, A, N, N])
+            R = np.zeros([A, A, 2*N, 2*N])
 
             # quadratic
             R += H[(0, 2)]
-
-            # terms associated with thermal
-
-            R += np.einsum('abki,kj->abij', H[(1, 1)], T[(0, 2)])
-            R += np.einsum('abkj,ki->abij', H[(1, 1)], T[(0, 2)])
-            R += np.einsum('abki,kj->abij', H[(0, 2)], T[(1, 1)])
-            R += np.einsum('abkj,ki->abij', H[(0, 2)], T[(1, 1)])
-
-            R += np.einsum('ablk,kj,li->abij', H[(1, 1)], T[(1, 1)], T[(0, 2)])
-            R += np.einsum('ablk,ki,lj->abij', H[(1, 1)], T[(1, 1)], T[(0, 2)])
-            R += np.einsum('abkl,lj,ki->abij', H[(2, 0)], T[(0, 2)], T[(0, 2)])
-            R += np.einsum('abkl,ki,lj->abij', H[(0, 2)], T[(1, 1)], T[(1, 1)])
 
             return R
 
@@ -508,26 +452,15 @@ class vibronic_model_hamiltonian(object):
             """return residue R_ij: (2, 0) block"""
 
             # # initialize as zero
-            R = np.zeros([A, A, N, N])
+            R = np.zeros([A, A, 2*N, 2*N])
 
             # if self.hamiltonian_truncation_order >= 2:
 
             # quadratic
             R += H[(2, 0)]  # h term
-            R += np.einsum('abkj,ki->abij', H[(1, 1)], T[2, 0])
-            R += np.einsum('abki,kj->abij', H[(1, 1)], T[2, 0])
-            R += np.einsum('abkl,ki,lj->abij', H[(0, 2)], T[2, 0], T[2, 0])
-
-            # terms associated with thermal
-
-            # linear
-            R += np.einsum('abjk,ik->abij', H[(2, 0)], T[(1, 1)])
-            R += np.einsum('abik,jk->abij', H[(2, 0)], T[(1, 1)])
-
-            # quadratic
-            R += np.einsum('ablk,ki,jl->abij', H[(1, 1)], T[(2, 0)], T[(1, 1)])
-            R += np.einsum('ablk,kj,il->abij', H[(1, 1)], T[(2, 0)], T[(1, 1)])
-            R += np.einsum('abkl,ik,jl->abij', H[(2, 0)], T[(1, 1)], T[(1, 1)])
+            R += np.einsum('abkj,ki->abij', H[(1, 1)], T[2])
+            R += np.einsum('abki,kj->abij', H[(1, 1)], T[2])
+            R += np.einsum('abkl,ki,lj->abij', H[(0, 2)], T[2], T[2])
 
             return R
 
@@ -546,155 +479,78 @@ class vibronic_model_hamiltonian(object):
         """calculation net residual <\omega H_bar Z>"""
         A, N = self.A, self.N
 
-        def f_z_0(H, T):
-            """return residue R_0: (0, 0) block"""
+        def f_z_0(H, Z):
+            """return residue R_0: 0 block"""
 
             # initialize as zero
             R = np.zeros(A)
 
-            R += np.einsum('abk,bk->a', H[(0, 1)], T[(1, 0)])
-            R += 0.5 * np.einsum('abkl,bkl->a', H[(0, 2)], T[(2, 0)])
-
-            # terms associated with thermal
-            R += np.einsum('abkl,blk->a', H[(1, 1)], T[(1, 1)])
-            R += np.einsum('abk,bk->a', H[(1, 0)], T[(0, 1)])
-            R += 0.5 * np.einsum('abkl,bkl->a', H[(2, 0)], T[(0, 2)])
+            R += np.einsum('abk,bk->a', H[(0, 1)], Z[1])
+            R += 0.5 * np.einsum('abkl,bkl->a', H[(0, 2)], Z[2])
 
             # disconneted CI term
-            R += np.einsum('ab,b->a', H[(0, 0)], T[(0, 0)])
+            R += np.einsum('ab,b->a', H[(0, 0)], Z[0])
 
             return R
 
-        def f_z_i(H, T):
-            """return residue R_I: (0, 1) block"""
-
-            # initialize as zero
-            R = np.zeros([A, N])
-            # R += np.einsum('abik,bk->ai', H[(0, 2)], T[(1, 0)])
-
-            # terms associated with thermal
-            # R += np.einsum('abki,bk->ai', H[(1, 1)], T[(0, 1)])
-            R += np.einsum('abk,bki->ai', H[(1, 0)], T[(0, 2)])
-            R += np.einsum('abk,bki->ai', H[(0, 1)], T[(1, 1)])
-            # disconnect CI terms
-            R += np.einsum('ab,bi->ai', H[(0, 0)], T[(0, 1)])
-            # R += np.einsum('abi,b->ai', H[(0, 1)], T[(0, 0)])
-            return R
-
-        def f_z_I(H, T):
-            """return residue R_i: (1, 0) block"""
+        def f_z_I(H, Z):
+            """return residue R_i: 1 block"""
 
             # initialize
-            R = np.zeros([A, N])
+            R = np.zeros([A, 2*N])
 
-            R += np.einsum('abik,bk->ai', H[(1, 1)], T[(1, 0)])
-            R += np.einsum('abk,bki->ai', H[(0, 1)], T[(2, 0)])
+            R += np.einsum('abik,bk->ai', H[(1, 1)], Z[1])
+            R += np.einsum('abk,bki->ai', H[(0, 1)], Z[2])
 
-            # terms associated with thermal
-            R += np.einsum('abk,bik->ai', H[(1, 0)], T[(1, 1)])
-            R += np.einsum('abki,bk->ai', H[(2, 0)], T[(0, 1)])
             # disconnected CI terms
-            R += np.einsum('ab,bi->ai', H[(0, 0)], T[(1, 0)])
-            R += np.einsum('abi,b->ai', H[(1, 0)], T[(0, 0)])
+            R += np.einsum('ab,bi->ai', H[(0, 0)], Z[1])
+            R += np.einsum('abi,b->ai', H[(1, 0)], Z[0])
 
             return R
 
-        def f_z_Ij(H, T):
-            """return residue R_Ij: (1, 1) block"""
-
-            # initialize
-            R = np.zeros([A, N, N])
-            # R += np.einsum('abik,bkj->aij', H[(0, 2)], T[2, 0])
-
-            # terms associated with thermal
-            # R += np.einsum('abkj,ik->abij', H[(1, 1)], T[(1, 1)])
-            R += np.einsum('abik,bkj->aij', H[(1, 1)], T[(1, 1)])
-            R += np.einsum('abik,bjk->aij', H[(2, 0)], T[(0, 2)])
-            # disconneted CI terms
-            R += np.einsum('ab,bij->aij', H[(0, 0)], T[(1, 1)])
-            R += np.einsum('abi,bj->aij', H[(1, 0)], T[(0, 1)])
-            # R += np.einsum('abj,bi->aij', H[(0, 1)], T[(1, 0)])
-            # R += np.einsum('abij,b->aij', H[(1, 1)], T[(0, 0)])
-
-            return R
-
-        def f_z_ij(H, T):
-            """return residue R_IJ: (0, 2) block"""
-
-            # initialize as zero
-            R = np.zeros([A, N, N])
-
-            # quadratic
-            # R += H[(0, 2)]
-
-            # terms associated with thermal
-            # R += np.einsum('abki,kj->abij', H[(1, 1)], T[(0, 2)])
-            # R += np.einsum('abkj,ki->abij', H[(1, 1)], T[(0, 2)])
-            # R += np.einsum('abki,kj->abij', H[(0, 2)], T[(1, 1)])
-            # R += np.einsum('abkj,ki->abij', H[(0, 2)], T[(1, 1)])
-
-            # discnneted CI terms
-            # R += np.einsum('abij,b->aij', H[(0, 2)], T[(0, 0)])
-            # R += np.einsum('abi,bj->aij', H[(0, 1)], T[(0, 1)])
-            # R += np.einsum('abj,bi->aij', H[(0, 1)], T[(0, 1)])
-            R += np.einsum('ab,bij->aij', H[(0, 0)], T[(0, 2)])
-
-            return R
-
-        def f_z_IJ(H, T):
+        def f_z_IJ(H, Z):
             """return residue R_ij: (2, 0) block"""
 
             # # initialize as zero
-            R = np.zeros([A, N, N])
-            R += np.einsum('abjk,bki->aij', H[(1, 1)], T[(2, 0)])
-            R += np.einsum('abik,bkj->aij', H[(1, 1)], T[(2, 0)])
-            # terms associated with thermal
-            R += np.einsum('abjk,bik->aij', H[(2, 0)], T[(1, 1)])
-            R += np.einsum('abik,bjk->aij', H[(2, 0)], T[(1, 1)])
+            R = np.zeros([A, 2*N, 2*N])
+            R += np.einsum('abjk,bki->aij', H[(1, 1)], Z[2])
+            R += np.einsum('abik,bkj->aij', H[(1, 1)], Z[2])
 
             # disconnected CI terms
-            R += np.einsum('abij,b->aij', H[(2, 0)], T[(0, 0)])
-            R += np.einsum('abi,bj->aij', H[(1, 0)], T[(1, 0)])
-            R += np.einsum('abj,bi->aij', H[(1, 0)], T[(1, 0)])
-            R += np.einsum('ab,bij->aij', H[(0, 0)], T[(2, 0)])
+            R += np.einsum('abij,b->aij', H[(2, 0)], Z[0])
+            R += np.einsum('abi,bj->aij', H[(1, 0)], Z[1])
+            R += np.einsum('abj,bi->aij', H[(1, 0)], Z[1])
+            R += np.einsum('ab,bij->aij', H[(0, 0)], Z[2])
 
             return R
 
         residual = {}
         # calculate net residual block by block
-        residual[(0, 0)] = f_z_0(H_args, Z_args)
-        residual[(0, 1)] = f_z_i(H_args, Z_args)
-        residual[(1, 0)] = f_z_I(H_args, Z_args)
-        residual[(1, 1)] = f_z_Ij(H_args, Z_args)
-        residual[(0, 2)] = f_z_ij(H_args, Z_args)
-        residual[(2, 0)] = f_z_IJ(H_args, Z_args)
+        residual[0] = f_z_0(H_args, Z_args)
+        residual[1] = f_z_I(H_args, Z_args)
+        residual[2] = f_z_IJ(H_args, Z_args)
 
         return residual
 
     def cal_T_Z_residual(self, T_args, Z_args):
         """calculation T and Z residual"""
         N = self.N
-        def cal_T_residual(R_args, Z_args):
+        def cal_T_residual(H_args, Z_args):
             """calculation T residual from Ehrenfest parameterization"""
-            def cal_dT_i():
-                """(0, 1) block of T residual"""
-                R = np.einsum('a,ai->i', Z_args[(0, 0)], R_args[(0, 1)]) / np.einsum('a,a->', Z_args[(0, 0)], Z_args[(0, 0)])
+
+            def cal_dT_1():
+                """1 block of T residual"""
+                R = np.einsum('a,abi,b->i', Z_args[0], H_args[(1, 0)], Z_args[0]) / np.einsum('a,a->', Z_args[0], Z_args[0])
                 return R
 
-            def cal_dT_I():
-                """(1, 0) block of T residual"""
-                R = np.einsum('a,ai->i', Z_args[(0, 0)], R_args[(1, 0)]) / np.einsum('a,a->', Z_args[(0, 0)], Z_args[(0, 0)])
-                return R
-
-            def cal_dT_Ij():
-                """(1, 1) block of T residual"""
-                R = np.einsum('a,aij->ij', Z_args[(0, 0)], R_args[(1, 1)]) / np.einsum('a,a->', Z_args[(0, 0)], Z_args[(0, 0)])
+            def cal_dT_2():
+                """2 block of T residual"""
+                R = np.einsum('a,abij,b->ij', Z_args[0], H_args[(2, 0)], Z_args[0]) / np.einsum('a,a->', Z_args[0], Z_args[0])
                 return R
 
             residual = {}
-            residual[(0, 1)] = cal_dT_i()
-            residual[(1, 0)] = cal_dT_I()
-            residual[(1, 1)] = cal_dT_Ij()
+            residual[1] = cal_dT_1()
+            residual[2] = cal_dT_2()
 
             return residual
 
@@ -702,58 +558,38 @@ class vibronic_model_hamiltonian(object):
             """calculation Z residual by strustracting T residual from the net residual"""
             def cal_dZ_0():
                 """(0, 0) block of Z residual"""
-                R = R_args[(0, 0)]
-                return R
-
-            def cal_dZ_i():
-                """(0, 1) block of Z residual"""
-                R = R_args[(0, 1)]
-                R -= np.einsum('i,a->ai', dT_args[(0, 1)], Z_args[(0, 0)])
+                R = R_args[0]
                 return R
 
             def cal_dZ_I():
                 """(1, 0) block of Z residual"""
-                R = R_args[(1, 0)]
-                R -= np.einsum('i,a->ai', dT_args[(1, 0)], Z_args[(0, 0)])
-                return R
-
-            def cal_dZ_Ij():
-                """(1, 1) block of Z residual"""
-                R = R_args[(1, 1)]
-                R -= np.einsum('ij,a->aij', dT_args[(1, 1)], Z_args[(0, 0)])
-                R -= np.einsum('i,aj->aij', dT_args[(1, 0)], Z_args[(0, 1)])
-                R -= np.einsum('j,ai->aij', dT_args[(0, 1)], Z_args[(1, 0)])
-                return R
-
-            def cal_dZ_ij():
-                """(0, 2) block of Z residual"""
-                R = R_args[(0, 2)]
-                R -= np.einsum('i,aj->aij', dT_args[(0, 1)], Z_args[(0, 1)])
-                R -= np.einsum('j,ai->aij', dT_args[(0, 1)], Z_args[(0, 1)])
+                R = R_args[1]
+                R -= np.einsum('i,a->ai', dT_args[1], Z_args[0])
                 return R
 
             def cal_dZ_IJ():
                 """(2, 0) block of Z residual"""
-                R = R_args[(2, 0)]
-                R -= np.einsum('i,aj->aij', dT_args[(1, 0)], Z_args[(1, 0)])
-                R -= np.einsum('j,ai->aij', dT_args[(1, 0)], Z_args[(1, 0)])
+                R = R_args[2]
+                R -= np.einsum('i,aj->aij', dT_args[1], Z_args[1])
+                R -= np.einsum('j,ai->aij', dT_args[1], Z_args[1])
+                R -= np.einsum('ij,a->aij', dT_args[2], Z_args[0])
                 return R
 
             residual = {}
-            residual[(0, 0)] = cal_dZ_0()
-            residual[(1, 0)] = cal_dZ_I()
-            residual[(0, 1)] = cal_dZ_i()
-            residual[(1, 1)] = cal_dZ_Ij()
-            residual[(2, 0)] = cal_dZ_IJ()
-            residual[(0, 2)] = cal_dZ_ij()
+            residual[0] = cal_dZ_0()
+            residual[1] = cal_dZ_I()
+            residual[2] = cal_dZ_IJ()
 
             return residual
         # calculate similarity transfromed Hamiltonian
-        H_bar = self.sim_trans_H(self.H, T_args)
+        H_bar = self.sim_trans_H(self.H_tilde_reduce, T_args)
         # calculation net residual
         net_residual = self.cal_net_residual(H_bar, Z_args)
         # calculate T residual
-        t_residual = cal_T_residual(net_residual, Z_args)
+        # print(H_bar.keys())
+        # print(Z_args.keys())
+        # os._exit(0)
+        t_residual = cal_T_residual(H_bar, Z_args)
         # calculate Z residual
         z_residual = cal_Z_residual(net_residual, Z_args, t_residual)
 
@@ -761,7 +597,13 @@ class vibronic_model_hamiltonian(object):
 
 
     def TFCC_integration(self, output_path, T_initial, T_final, N_step, debug_flag=False):
-        """conduct TFCC imaginary time integration to calculation thermal properties"""
+        """
+        conduct TFCC imaginary time integration to calculation thermal
+        properties
+        T_initial: initial temperature of the integration
+        T_final: final temperature of the integration
+        N_step: number of the numerical steps
+        """
         A, N = self.A, self.N
         # map initial T amplitude
         T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial)
@@ -784,9 +626,9 @@ class vibronic_model_hamiltonian(object):
                 # calculate residual one surface at a time
                 t_amplitude, z_amplitude = {}, {}
                 for block in T_amplitude.keys():
-                    t_amplitude[block] = T_amplitude[block][x, :].copy()
+                    t_amplitude[block] = T_amplitude[block][x, :]
                 for block in Z_amplitude.keys():
-                    z_amplitude[block] = Z_amplitude[block][x, :].copy()
+                    z_amplitude[block] = Z_amplitude[block][x, :]
                 t_residual, z_residual = self.cal_T_Z_residual(t_amplitude, z_amplitude)
                 for block in t_residual.keys():
                     T_residual[block][x, :] += t_residual[block]
@@ -806,13 +648,18 @@ class vibronic_model_hamiltonian(object):
             # calculate partition function
             # print("Z[(0, 0)]:\n{:}".format(Z_amplitude[0, 0]))
             # print("step:{:}".format(step))
-            Z = np.trace(Z_amplitude[(0, 0)])
+            Z = np.trace(Z_amplitude[0])
             self.partition_function.append(Z)
             # calculate thermal internal energy
-            E = np.trace(Z_residual[(0, 0)]) / Z
+            E = np.trace(Z_residual[0]) / Z
             self.internal_energy.append(E)
 
             print("step {:}:".format(i))
+            print("max z_0 amplitude:{:}".format(Z_amplitude[0]))
+            print("max z_1 amplitude:{:}".format(abs(Z_amplitude[1]).max()))
+            print("max z_2 amplitude:{:}".format(abs(Z_amplitude[2]).max()))
+            print("max t_1 ampltiude:{:}".format(abs(T_amplitude[1]).max()))
+            print("max t_2 amplitude:{:}".format(abs(T_amplitude[2]).max()))
             print("Temperature: {:} K".format(self.temperature_grid[i]))
             print("thermal internal energy: {:} cm-1".format(E))
             print("partition function: {:}".format(Z))
@@ -820,7 +667,7 @@ class vibronic_model_hamiltonian(object):
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"thermal_data_TNOE.csv", index=False)
+        df.to_csv(output_path+"thermal_data_TFCC.csv", index=False)
 
         return
 
