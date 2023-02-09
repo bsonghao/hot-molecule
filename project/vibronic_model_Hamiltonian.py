@@ -91,6 +91,108 @@ class vibronic_model_hamiltonian(object):
 
         print("### End of Hamiltonian parameters ####")
 
+    def thermal_field_transform(self, T_ref):
+        """
+        conduct Bogoliubov transfrom of the physical hamiltonian
+        T_ref: temperature for the thermal field reference state
+        """
+        # calculate inverse temperature
+        self.T_ref = T_ref
+        beta = 1. / (self.Kb * T_ref)
+        # define Bogliubov transformation based on Bose-Einstein statistics
+        self.cosh_theta = 1. / np.sqrt((np.ones(self.N) - np.exp(-beta * self.Freq)))
+        self.sinh_theta = np.exp(-beta * self.Freq / 2.) / np.sqrt(np.ones(self.N) - np.exp(-beta * self.Freq))
+
+        # Bogliubov tranform that Hamiltonian
+        self.H_tilde = dict()
+
+        # constant terms
+        self.H_tilde[(0, 0)] = self.H[(0, 0)] + np.einsum('abii,i,i->ab', self.H[(1, 1)], self.sinh_theta, self.sinh_theta)
+
+        # linear termss
+        self.H_tilde[(1, 0)] = {
+                               "a": np.einsum('i,abi->abi', self.cosh_theta, self.H[(1, 0)]),
+                               "b": np.einsum('i,abi->abi', self.sinh_theta, self.H[(0, 1)])
+                               }
+
+        self.H_tilde[(0, 1)] = {
+                               "a": np.einsum('i,abi->abi', self.cosh_theta, self.H[(0, 1)]),
+                               "b": np.einsum('i,abi->abi', self.sinh_theta, self.H[(1, 0)])
+                               }
+
+        # quadratic terms
+        self.H_tilde[(1, 1)] = {
+                                "aa": np.einsum('i,j,abij->abij', self.cosh_theta, self.cosh_theta, self.H[(1, 1)]),
+                                "ab": np.einsum('i,j,abij->abij', self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
+                                "ba": np.einsum('i,j,abij->abij', self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
+                                "bb": np.einsum('i,j,abji->abij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
+                               }
+
+        self.H_tilde[(2, 0)] = {
+                                "aa": np.einsum('i,j,abij->abij', self.cosh_theta, self.cosh_theta, self.H[(2, 0)]),
+                                "ab": np.einsum('i,j,abij->abij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
+                                "ba": np.einsum('i,j,abji->abij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
+                                "bb": np.einsum('i,j,abij->abij', self.sinh_theta, self.sinh_theta, self.H[(0, 2)]),
+                               }
+
+        self.H_tilde[(0, 2)] = {
+                                "aa": np.einsum('i,j,abij->abij', self.cosh_theta, self.cosh_theta, self.H[(0, 2)]),
+                                "ab": np.einsum('i,j,abji->abij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
+                                "ba": np.einsum('i,j,abij->abij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
+                                "bb": np.einsum('i,j,abij->abij', self.sinh_theta, self.sinh_theta, self.H[(2, 0)])
+                               }
+
+        print("###### Bogliubov transformed Hamiltonian ########")
+        for rank in self.H_tilde.keys():
+            if rank == (0, 0):
+                print("Rank:{:}\n{:}".format(rank, self.H_tilde[rank]))
+            else:
+                for block in self.H_tilde[rank].keys():
+                    print("Rank:{:} Block:{:}\n{:}".format(rank, block, self.H_tilde[rank][block]))
+        return
+
+    def merge_linear(self, input_tensor):
+        """ merge linear terms of the Bogliubov transformed tensor """
+        A, N = self.A, self.N
+        output_tensor = np.zeros([A, A, 2 * N])
+        for x, y in it.product(range(A), repeat=2):
+            output_tensor[x, y, :N] += input_tensor['a'][x, y, :]
+            output_tensor[x, y, N:] += input_tensor['b'][x, y, :]
+
+        return output_tensor
+
+    def merge_quadratic(self, input_tensor):
+        """ merge quadratic_terms of the Bogliubov transformed tensor """
+        A, N = self.A, self.N
+        output_tensor = np.zeros([A, A, 2 * N, 2 * N])
+        for x, y in it.product(range(A), repeat=2):
+            output_tensor[x, y, :N, :N] += input_tensor["aa"][x, y, :]
+            output_tensor[x, y, :N, N:] += input_tensor["ab"][x, y, :]
+            output_tensor[x, y, N:, :N] += input_tensor["ba"][x, y, :]
+            output_tensor[x, y, N:, N:] += input_tensor["bb"][x, y, :]
+        return output_tensor
+
+    def reduce_H_tilde(self):
+        """merge the a, b blocks of the Bogliubov transformed Hamiltonian into on tensor"""
+        A, N = self.A, self.N
+        # initialize
+        self.H_tilde_reduce = {
+            (0, 0): self.H_tilde[(0, 0)],
+            }
+
+        self.H_tilde_reduce[(1, 0)] = self.merge_linear(self.H_tilde[(1, 0)])
+        self.H_tilde_reduce[(0, 1)] = self.merge_linear(self.H_tilde[(0, 1)])
+        self.H_tilde_reduce[(1, 1)] = self.merge_quadratic(self.H_tilde[(1, 1)])
+        self.H_tilde_reduce[(2, 0)] = self.merge_quadratic(self.H_tilde[(2, 0)])
+        self.H_tilde_reduce[(0, 2)] = self.merge_quadratic(self.H_tilde[(0, 2)])
+
+        print("##### Bogliubov transformed (fictitous) Hamiltonian after merge blocks ######")
+        for rank in self.H_tilde_reduce.keys():
+            print("Block {:}: \n {:}".format(rank, self.H_tilde_reduce[rank]))
+
+        return
+
+
     def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N_step=10000, compare_with_TNOE=False):
         """calculation thermal properties through sum over states"""
         A, N = self.A, self.N

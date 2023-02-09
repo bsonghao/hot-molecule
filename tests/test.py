@@ -28,7 +28,7 @@ def read_in_model(dir, file_name):
     N = dict["number of modes"]
     A = dict["number of surfaces"]
     VE = np.array(dict["energies"])
-    Freq = np.array(dict["frequencies"]) * 10
+    Freq = np.array(dict["frequencies"]) * 10 # enlarge the frequencies by 10 time to mimics the true physical models
     LCP = np.array(dict["linear couplings"])
     json_file.close()
 
@@ -54,8 +54,11 @@ def main():
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, VE, num_mode, num_surf, FC=False)
-    model.TFCC_integration(T_initial=1e4, T_final=1e3, N_step=10000, output_path=outputdir)
-    model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=10000, T_final=10, N_step=10000, compare_with_TNOE=True)
+    # Bogoliubov transform the Hamiltonian
+    model.thermal_field_transform(T_ref=1e3)
+    model.reduce_H_tilde()
+    # model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=2000, T_final=100, N_step=10000, compare_with_TNOE=False)
+    # model.TFCC_integration(T_initial=1e4, T_final=1e3, N_step=10000, output_path=outputdir)
     # model._map_initial_amplitude(T_initial=1e4)
 
     # model.sum_over_states(basis_size=40, output_path=outputdir, compare_with_TFCC=False, T_grid=np.linspace(100, 10000, 10000))
