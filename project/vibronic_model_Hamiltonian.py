@@ -38,13 +38,14 @@ sys.path.insert(0, project_dir)
 class vibronic_model_hamiltonian(object):
     """ vibronic model hamiltonian class implement TF-VECC approach to simulation thermal properties of vibronic models. """
 
-    def __init__(self, freq, LCP, QCP, VE, num_mode):
+    def __init__(self, freq, LCP, QCP, VE, num_mode, quadratic_flag=False):
         """ initialize hamiltonian parameters:
         freq: vibrational frequencies
         LCP: linear coupling_constants
         QCP: quadratic coupling constant
         VE" vertical energy
         num_mode: number of vibration modes
+        quadratic_flag: a bool to determine whether there is QCP in the model
         """
 
         # initialize the Hamiltonian parameters as object instances
@@ -53,6 +54,7 @@ class vibronic_model_hamiltonian(object):
         self.LCP = LCP
         self.QCP = QCP
         self.VE = VE
+        self.quadratic_flag = quadratic_flag
 
         # Boltzmann constant (eV K-1)
         self.Kb = 8.61733326e-5
@@ -61,7 +63,7 @@ class vibronic_model_hamiltonian(object):
         # and we represent the Hamitlnian in the form of second quantization
         self.H = dict()
         # constant
-        self.H[(0, 0)] = VE + 0.5 * np.trace(QCP)
+        self.H[(0, 0)] = VE + 0.5 * np.trace(QCP) + 0.5 * sum(freq)
         # first order
         self.H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
         self.H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N)
@@ -81,52 +83,87 @@ class vibronic_model_hamiltonian(object):
 
         print("### End of Hamiltonian parameters ####")
 
+
+    def cal_transformed_para(self):
+        """
+        calculate transformed parameters for quadratic models
+        """
+        # define Hessian matrix
+        K = np.diag(self.Freq**2)
+        K += 2 * np.einsum('ij,i,j->ij', self.QCP, np.sqrt(self.Freq), np.sqrt(self.Freq))
+        # diagonalize the Hessian matrix
+        Lambda, U = np.linalg.eigh(K)
+        Freq_new = np.sqrt(Lambda)
+        # calculate the transformed Linear Coupling Constant (LCP)
+        LCP_new = np.einsum('k,k,ik->i', self.LCP, np.sqrt(self.Freq), U)
+        LCP_new /= np.sqrt(Freq_new)
+
+        return Freq_new, LCP_new, U
+
     def thermal_field_transformation(self, Temp):
         """conduct Bogoliubov transformation of input Hamiltonian and determine thermal field reference state"""
+        if self.quadratic_flag:
+            # rotate the basis of the physical Hamiltonian for quadratic models
+            Freq, LCP, U = self.cal_transformed_para()
+            # reconstruct the Hamiltonian matrix elements
+            H = {}
+            # constant
+            H[(0, 0)] = self.VE + 0.5 * sum(Freq)
+            # first order
+            H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
+            H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N)
+            # second order
+            H[(1, 1)] = np.diag(Freq)
+            H[(2, 0)] = np.zeros([self.N, self.N])
+            H[(0, 2)] = np.zeros([self.N, self.N])
+
+        else:
+            Freq, LCP = self.Freq, self.LCP
+            H = self.H
         # calculate inverse temperature
         beta = 1. / (self.Kb * Temp)
         # define Bogliubov transformation based on Bose-Einstein statistics
-        self.cosh_theta = 1. / np.sqrt((np.ones(self.N) - np.exp(-beta * self.Freq)))
-        self.sinh_theta = np.exp(-beta * self.Freq / 2.) / np.sqrt(np.ones(self.N) - np.exp(-beta * self.Freq))
+        self.cosh_theta = 1. / np.sqrt((np.ones(self.N) - np.exp(-beta * Freq)))
+        self.sinh_theta = np.exp(-beta * Freq / 2.) / np.sqrt(np.ones(self.N) - np.exp(-beta * Freq))
 
         # Bogliubov tranform that Hamiltonian
         self.H_tilde = dict()
 
         # constant term???
-        self.H_tilde[(0, 0)] = self.H[(0, 0)] + np.einsum('ii,i,i->', self.H[(1, 1)], self.sinh_theta, self.sinh_theta)
+        self.H_tilde[(0, 0)] = H[(0, 0)] + np.einsum('ii,i,i->', H[(1, 1)], self.sinh_theta, self.sinh_theta)
 
         # linear terns
         self.H_tilde[(1, 0)] = {
-                               "a": self.cosh_theta * self.H[(1, 0)],
-                               "b": self.sinh_theta * self.H[(0, 1)]
+                               "a": self.cosh_theta * H[(1, 0)],
+                               "b": self.sinh_theta * H[(0, 1)]
                                }
 
         self.H_tilde[(0, 1)] = {
-                               "a": self.cosh_theta * self.H[(0, 1)],
-                               "b": self.sinh_theta * self.H[(1, 0)]
+                               "a": self.cosh_theta * H[(0, 1)],
+                               "b": self.sinh_theta * H[(1, 0)]
                                }
 
         # quadratic terms
         self.H_tilde[(1, 1)] = {
-                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(1, 1)]),
-                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(2, 0)]),
-                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "bb": np.einsum('i,j,ji->ij', self.sinh_theta, self.sinh_theta, self.H[(1, 1)])
+                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, H[(1, 1)]),
+                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, H[(2, 0)]),
+                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, H[(0, 2)]),
+                                "bb": np.einsum('i,j,ji->ij', self.sinh_theta, self.sinh_theta, H[(1, 1)])
                                }
 
 
         self.H_tilde[(2, 0)] = {
-                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(2, 0)]),
-                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
-                                "ba": np.einsum('i,j,ji->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
-                                "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(0, 2)]),
+                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, H[(2, 0)]),
+                                "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, H[(1, 1)]),
+                                "ba": np.einsum('i,j,ji->ij', self.sinh_theta, self.cosh_theta, H[(1, 1)]),
+                                "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, H[(0, 2)]),
                                }
 
         self.H_tilde[(0, 2)] = {
-                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "ab": np.einsum('i,j,ji->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
-                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
-                                "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(2, 0)])
+                                "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, H[(0, 2)]),
+                                "ab": np.einsum('i,j,ji->ij', self.cosh_theta, self.sinh_theta, H[(1, 1)]),
+                                "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, H[(1, 1)]),
+                                "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, H[(2, 0)])
                                }
 
 
@@ -142,27 +179,31 @@ class vibronic_model_hamiltonian(object):
 
     def _map_initial_amplitude(self, T_initial, mix_flag):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
-        def map_t_0_amplitude(beta):
+        def map_t_0_amplitude(LCP, Freq, beta):
             """map t_0 amplitude from H.O. partition function"""
             z = 1
-            for i,w in enumerate(self.Freq):
+            for i,w in enumerate(Freq):
                 z *= 1 / (1 - np.exp(-beta * w))
-            z *= np.exp(-beta * (self.H[(0, 0)]-sum(self.LCP**2 / self.Freq)/2.))
+            z *= np.exp(-beta * (self.VE - sum(LCP**2 / Freq)/2. + 0.5 * np.sum(Freq)))
             if mix_flag:
                 t_0 = z
             else:
                 t_0 = np.log(z)
             return t_0
 
-        def map_t1_amplitude():
+        def map_t1_amplitude(LCP, Freq):
             """
             map t_1 amplitude from linear coupling constant
             """
             # initialize t1 amplitude
-            X_i = self.H[(1, 0)] / self.Freq
+            X_i = LCP / Freq / np.sqrt(2)
             t_1 = np.zeros(2 * N)
             t_1[:N] -= X_i / self.cosh_theta
             t_1[N:] -= X_i / self.sinh_theta
+
+            # if self.quadratic_flag:
+                # t_1[:N] = np.einsum('k,ik->i', t_1[:N], U)
+                # t_1[N:] = np.einsum('k,ik->i', t_1[N:], U)
 
             return t_1
 
@@ -172,8 +213,12 @@ class vibronic_model_hamiltonian(object):
             t_2 = np.zeros([2*N, 2*N])
 
             # enter initial t_2 for ab block
-            t_2[N:, :N] += np.diag((BE_occ - self.sinh_theta**2 - np.ones(N)) / self.cosh_theta / self.sinh_theta)
-            t_2[:N, N:] += np.diag((BE_occ - self.cosh_theta**2) / self.cosh_theta / self.sinh_theta)
+            t_2[N:, :N] += np.diag(BE_occ - self.sinh_theta**2 - np.ones(N))
+            t_2[N:, :N] /= np.einsum('i,j->ij', self.cosh_theta, self.sinh_theta)
+
+            # enter iniial t_2 for ba block
+            t_2[:N, N:] += np.diag(BE_occ - self.cosh_theta**2)
+            t_2[:N, N:] /= np.einsum('i,j->ij', self.cosh_theta, self.sinh_theta)
 
             # symmetrize t_2 amplitude
             t_2_new = np.zeros_like(t_2)
@@ -185,24 +230,30 @@ class vibronic_model_hamiltonian(object):
         N = self.N
         beta_initial = 1. / (self.Kb * T_initial)
 
+        if self.quadratic_flag:
+            # transform in to new mode coordinate if it is a quadratic models.
+            Freq, LCP, U = self.cal_transformed_para()
+        else:
+            Freq, LCP = self.Freq, self.LCP
+
         # calculation BE occupation number at initial beta
-        BE_occ = np.ones(N) / (np.ones(N) - np.exp(-beta_initial * self.Freq))
+        BE_occ = np.ones(N) / (np.ones(N) - np.exp(-beta_initial * Freq))
 
         print("BE occupation number:{:}".format(BE_occ))
 
         initial_T_amplitude = {}
         initial_Z_amplitude = {}
         if not mix_flag:
-            initial_T_amplitude[0] = map_t_0_amplitude(beta_initial)
-            initial_T_amplitude[1] = map_t1_amplitude()
+            initial_T_amplitude[0] = map_t_0_amplitude(LCP, Freq, beta_initial)
+            initial_T_amplitude[1] = map_t1_amplitude(LCP, Freq)
             initial_T_amplitude[2] = map_t2_amplitude()
 
             print("initial constant T ampltidue:\n{:}".format(initial_T_amplitude[0]))
             print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
             print("initial double T amplitude:\n{:}".format(initial_T_amplitude[2]))
         else:
-            initial_Z_amplitude[0] = map_t_0_amplitude(beta_initial)
-            initial_T_amplitude[1] = map_t1_amplitude()
+            initial_Z_amplitude[0] = map_t_0_amplitude(LCP, Freq, beta_initial)
+            initial_T_amplitude[1] = map_t1_amplitude(LCP, Freq)
             initial_T_amplitude[2] = map_t2_amplitude()
 
             # set the result of the ampltiudes zeros and ones
@@ -632,17 +683,17 @@ class vibronic_model_hamiltonian(object):
                             if a_1 == b_1 and a_2 == b_2-1:
                                 Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 1)][1]*np.sqrt(b_2)
                             if a_1 == b_1+2 and a_2 == b_2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][0, 0]*np.sqrt(b_1+1)*np.sqrt(b_1+2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][0, 0]*np.sqrt(b_1+1)*np.sqrt(b_1+2) / 2.
                             if a_1 == b_1+1 and a_2 == b_2+1:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(2, 0)][0, 1] + self.H[(2, 0)][1, 0])*np.sqrt(b_1+1)*np.sqrt(b_2+1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(2, 0)][0, 1] + self.H[(2, 0)][1, 0])*np.sqrt(b_1+1)*np.sqrt(b_2+1) / 2.
                             if a_1 == b_1 and a_2 == b_2+2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][1, 1]*np.sqrt(b_2+1)*np.sqrt(b_2+2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(2, 0)][1, 1]*np.sqrt(b_2+1)*np.sqrt(b_2+2) / 2.
                             if a_1 == b_1-2 and a_2 == b_2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][0, 0]*np.sqrt(b_1)*np.sqrt(b_1-1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][0, 0]*np.sqrt(b_1)*np.sqrt(b_1-1) / 2.
                             if a_1 == b_1-1 and a_2 == b_2-1:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(0, 2)][0, 1] + self.H[(0, 2)][1, 0])*np.sqrt(b_1)*np.sqrt(b_2)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (self.H[(0, 2)][0, 1] + self.H[(0, 2)][1, 0])*np.sqrt(b_1)*np.sqrt(b_2) / 2.
                             if a_1 == b_1 and a_2 == b_2-2:
-                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][1, 1]*np.sqrt(b_2)*np.sqrt(b_2-1)
+                                Hamiltonian[a_1, a_2, b_1, b_2] = self.H[(0, 2)][1, 1]*np.sqrt(b_2)*np.sqrt(b_2-1) / 2.
 
             Hamiltonian = Hamiltonian.reshape(basis_size**self.N, basis_size**self.N)
 
