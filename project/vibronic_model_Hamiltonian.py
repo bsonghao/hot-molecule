@@ -106,20 +106,20 @@ class vibronic_model_hamiltonian(object):
             # rotate the basis of the physical Hamiltonian for quadratic models
             Freq, LCP, U = self.cal_transformed_para()
             # reconstruct the Hamiltonian matrix elements
-            H = {}
+            # H = {}
             # constant
-            H[(0, 0)] = self.VE + 0.5 * sum(Freq)
+            # H[(0, 0)] = self.VE + 0.5 * sum(Freq)
             # first order
-            H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
-            H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N)
+            # H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
+            # H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N)
             # second order
-            H[(1, 1)] = np.diag(Freq)
-            H[(2, 0)] = np.zeros([self.N, self.N])
-            H[(0, 2)] = np.zeros([self.N, self.N])
+            # H[(1, 1)] = np.diag(Freq)
+            # H[(2, 0)] = np.zeros([self.N, self.N])
+            # H[(0, 2)] = np.zeros([self.N, self.N])
 
         else:
             Freq, LCP = self.Freq, self.LCP
-            H = self.H
+        H = self.H
         # calculate inverse temperature
         beta = 1. / (self.Kb * Temp)
         # define Bogliubov transformation based on Bose-Einstein statistics
@@ -198,26 +198,42 @@ class vibronic_model_hamiltonian(object):
             # initialize t1 amplitude
             X_i = LCP / Freq / np.sqrt(2)
             t_1 = np.zeros(2 * N)
-            t_1[:N] -= X_i / self.cosh_theta
-            t_1[N:] -= X_i / self.sinh_theta
+            t_1[:N] -= X_i
+            t_1[N:] -= X_i
 
-            # if self.quadratic_flag:
-                # t_1[:N] = np.einsum('k,ik->i', t_1[:N], U)
-                # t_1[N:] = np.einsum('k,ik->i', t_1[N:], U)
+            if self.quadratic_flag:
+                # rotate the physical density matrix for quadratic models
+                t_1[:N] = np.einsum('k,ik->i', t_1[:N], rot_mat_inv)
+                t_1[N:] = np.einsum('k,ik->i', t_1[N:], rot_mat_inv)
+
+            t_1[:N] /= self.cosh_theta
+            t_1[N:] /= self.sinh_theta
 
             return t_1
 
-        def map_t2_amplitude():
+        def map_t2_amplitude(Freq):
             """map t_2 amplitude from cumulant expression of 2-RDM"""
             # initialize t2 amplitude
             t_2 = np.zeros([2*N, 2*N])
 
             # enter initial t_2 for ab block
-            t_2[N:, :N] += np.diag(BE_occ - self.sinh_theta**2 - np.ones(N))
-            t_2[N:, :N] /= np.einsum('i,j->ij', self.cosh_theta, self.sinh_theta)
+            t_2[N:, :N] += np.diag(BE_occ - np.ones(N))
+
+            if self.quadratic_flag:
+                # rotate the density matrix for quadratic models
+                t_2[N:, :N] = np.einsum('ik,kl,lj->ij', rot_mat, t_2[N:, :N], rot_mat_inv)
+
+            t_2[N:, :N] -= np.diag(self.sinh_theta**2)
+            t_2[N:, :N] /= np.einsum('i,j->ij', self.sinh_theta, self.cosh_theta)
+
+
 
             # enter iniial t_2 for ba block
-            t_2[:N, N:] += np.diag(BE_occ - self.cosh_theta**2)
+            t_2[:N, N:] += np.diag(BE_occ)
+            if self.quadratic_flag:
+                # rotate the density matrix for quadratic models
+                t_2[:N, N:] = np.einsum('ik,kl,lj->ij', rot_mat, t_2[:N, N:], rot_mat_inv)
+            t_2[:N, N:] -= np.diag(self.cosh_theta**2)
             t_2[:N, N:] /= np.einsum('i,j->ij', self.cosh_theta, self.sinh_theta)
 
             # symmetrize t_2 amplitude
@@ -233,6 +249,12 @@ class vibronic_model_hamiltonian(object):
         if self.quadratic_flag:
             # transform in to new mode coordinate if it is a quadratic models.
             Freq, LCP, U = self.cal_transformed_para()
+            rot_mat_inv = np.einsum('i,ij,j->ij', np.sqrt(self.Freq), U, 1./np.sqrt(Freq))
+            rot_mat = np.einsum('i,ij,j->ij', np.sqrt(Freq), U, 1./np.sqrt(self.Freq))
+
+            print("rotation matrix:\n{:}".format(rot_mat))
+            print("inverse of the rotation matrix:\n{:}".format(rot_mat_inv))
+
         else:
             Freq, LCP = self.Freq, self.LCP
 
@@ -246,7 +268,7 @@ class vibronic_model_hamiltonian(object):
         if not mix_flag:
             initial_T_amplitude[0] = map_t_0_amplitude(LCP, Freq, beta_initial)
             initial_T_amplitude[1] = map_t1_amplitude(LCP, Freq)
-            initial_T_amplitude[2] = map_t2_amplitude()
+            initial_T_amplitude[2] = map_t2_amplitude(Freq)
 
             print("initial constant T ampltidue:\n{:}".format(initial_T_amplitude[0]))
             print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
