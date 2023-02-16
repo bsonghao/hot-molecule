@@ -102,23 +102,7 @@ class vibronic_model_hamiltonian(object):
 
     def thermal_field_transformation(self, Temp):
         """conduct Bogoliubov transformation of input Hamiltonian and determine thermal field reference state"""
-        if self.quadratic_flag:
-            # rotate the basis of the physical Hamiltonian for quadratic models
-            Freq, LCP, U = self.cal_transformed_para()
-            # reconstruct the Hamiltonian matrix elements
-            # H = {}
-            # constant
-            # H[(0, 0)] = self.VE + 0.5 * sum(Freq)
-            # first order
-            # H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
-            # H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N)
-            # second order
-            # H[(1, 1)] = np.diag(Freq)
-            # H[(2, 0)] = np.zeros([self.N, self.N])
-            # H[(0, 2)] = np.zeros([self.N, self.N])
-
-        else:
-            Freq, LCP = self.Freq, self.LCP
+        Freq, LCP = self.Freq, self.LCP
         H = self.H
         # calculate inverse temperature
         beta = 1. / (self.Kb * Temp)
@@ -211,7 +195,7 @@ class vibronic_model_hamiltonian(object):
 
             return t_1
 
-        def map_t2_amplitude(Freq):
+        def map_t2_amplitude():
             """map t_2 amplitude from cumulant expression of 2-RDM"""
             # initialize t2 amplitude
             t_2 = np.zeros([2*N, 2*N])
@@ -268,7 +252,7 @@ class vibronic_model_hamiltonian(object):
         if not mix_flag:
             initial_T_amplitude[0] = map_t_0_amplitude(LCP, Freq, beta_initial)
             initial_T_amplitude[1] = map_t1_amplitude(LCP, Freq)
-            initial_T_amplitude[2] = map_t2_amplitude(Freq)
+            initial_T_amplitude[2] = map_t2_amplitude()
 
             print("initial constant T ampltidue:\n{:}".format(initial_T_amplitude[0]))
             print("initial single T amplitude:\n{:}".format(initial_T_amplitude[1]))
