@@ -608,12 +608,16 @@ class vibronic_model_hamiltonian(object):
         # map initial T amplitude
         T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial)
 
+        # define the temperature grid for the integration
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
         step = (beta_final - beta_initial) / N_step
         self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N_step))
+
+        # define empty list to thermal properties
         self.partition_function = []
         self.internal_energy = []
+
         # thermal field imaginary time propagation
         for i in range(N_step):
             # initialize each block of T / Z residual as zeros
@@ -645,24 +649,24 @@ class vibronic_model_hamiltonian(object):
                     print("Z{:}:{:}".format(block, Z_residual[block]))
                 Z_amplitude[block] -= Z_residual[block] * step
 
-            # calculate partition function
-            # print("Z[(0, 0)]:\n{:}".format(Z_amplitude[0, 0]))
-            # print("step:{:}".format(step))
+            # calculate partition function and store data
             Z = np.trace(Z_amplitude[0])
             self.partition_function.append(Z)
-            # calculate thermal internal energy
+            # calculate thermal internal energy and store data
             E = np.trace(Z_residual[0]) / Z
             self.internal_energy.append(E)
 
-            print("step {:}:".format(i))
-            print("max z_0 amplitude:{:}".format(Z_amplitude[0]))
-            print("max z_1 amplitude:{:}".format(abs(Z_amplitude[1]).max()))
-            print("max z_2 amplitude:{:}".format(abs(Z_amplitude[2]).max()))
-            print("max t_1 ampltiude:{:}".format(abs(T_amplitude[1]).max()))
-            print("max t_2 amplitude:{:}".format(abs(T_amplitude[2]).max()))
-            print("Temperature: {:} K".format(self.temperature_grid[i]))
-            print("thermal internal energy: {:} cm-1".format(E))
-            print("partition function: {:}".format(Z))
+            # print out CC amplitude along the integration
+            if True:
+                print("step {:}:".format(i))
+                print("max z_0 amplitude:{:}".format(Z_amplitude[0]))
+                print("max z_1 amplitude:{:}".format(abs(Z_amplitude[1]).max()))
+                print("max z_2 amplitude:{:}".format(abs(Z_amplitude[2]).max()))
+                print("max t_1 ampltiude:{:}".format(abs(T_amplitude[1]).max()))
+                print("max t_2 amplitude:{:}".format(abs(T_amplitude[2]).max()))
+                print("Temperature: {:} K".format(self.temperature_grid[i]))
+                print("thermal internal energy: {:} cm-1".format(E))
+                print("partition function: {:}".format(Z))
 
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
