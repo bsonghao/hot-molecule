@@ -451,13 +451,13 @@ class vibronic_model_hamiltonian(object):
         def f_t_IJ(H, T):
             """return residue R_ij: (2, 0) block"""
 
-            # # initialize as zero
+            # initialize as zero
             R = np.zeros([A, A, 2*N, 2*N])
 
-            # if self.hamiltonian_truncation_order >= 2:
+            # h term
+            R += H[(2, 0)]
 
             # quadratic
-            R += H[(2, 0)]  # h term
             R += np.einsum('abkj,ki->abij', H[(1, 1)], T[2])
             R += np.einsum('abki,kj->abij', H[(1, 1)], T[2])
             R += np.einsum('abkl,ki,lj->abij', H[(0, 2)], T[2], T[2])
