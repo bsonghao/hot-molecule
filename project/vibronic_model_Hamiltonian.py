@@ -295,7 +295,7 @@ class vibronic_model_hamiltonian(object):
         thermal_data = {"T(K)": T_grid, "partition function": partition_function, "internal energy": thermal_internal_energy}
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"thermal_data_FCI.csv", index=False)
-        print("### Sum over state calculation teminated gracefully! ###")
+        print("### Sum over state calculation terminated gracefully! ###")
         return
 
     def _map_initial_amplitude(self, T_initial=1000):
@@ -474,6 +474,81 @@ class vibronic_model_hamiltonian(object):
         sim_h[(2, 0)] = f_t_IJ(H_args, T_args)
 
         return sim_h
+
+    def _cal_G_matrix(self, H_bar_args, T_args):
+        """calculate a second similarity tranformation (e^{T^dagger}H_bar)_f.c."""
+        A, N = self.A, self.N
+        def cal_G_0():
+            """calculate (0, 0) block of G"""
+            R = np.zeros([A, A])
+            R += H_bar_args[(0, 0)]
+            R += np.einsum('k,abk->ab', T_args[1], H_bar_args[(1, 0)])
+            R += 0.5 * np.einsum('k,l,abkl->ab', T_args[1], T_args[1], H_bar_args[(2, 0)])
+            R += 0.5 * np.einsum('kl,abkl->ab', T_args[2], H_bar_args[(2, 0)])
+            return R
+
+        def cal_G_I():
+            """calculate (1, 0) block of G"""
+            R = np.zeros([A, A, 2*N])
+            R += H_bar_args[(1, 0)]
+            R += np.einsum('k,abki->abi', T_args[1], H_bar_args[(2, 0)])
+            return R
+
+        def cal_G_i():
+            """calculate (0, 1) block of G"""
+            R = np.zeros([A, A, 2*N])
+            R += H_bar_args[(0, 1)]
+            R += np.einsum('k,abki->abi', T_args[1], H_bar_args[(1, 1)])
+            R += np.einsum('ki,abk->abi', T_args[2], H_bar_args[(1, 0)])
+            R += np.einsum('k,li,abkl->abi', T_args[1], T_args[2], H_bar_args[(2, 0)])
+            return R
+
+        def cal_G_Ij():
+            """calculate (1, 1) block of G"""
+            R = np.zeros([A, A, 2*N, 2*N])
+            R += H_bar_args[(1, 1)]
+            R += np.einsum('jk,abik->ij', T_args[2], H_bar_args[(2, 0)])
+            return R
+
+        def cal_G_IJ():
+            """calculate (2, 0) block of G"""
+            R = np.zeros([A, A, 2*N, 2*N])
+            R += H_bar_args[(2, 0)]
+            return R
+
+        def cal_G_ij():
+            """calculate (0, 2) block of G"""
+            R = np.zeros([A, A, 2*N, 2*N])
+            R += H_bar_args[(0, 2)]
+            R += np.einsum('kj,abki->abij', T_args[2], H_bar_args[(1, 1)])
+            R += np.einsum('ki,abkj->abij', T_args[2], H_bar_args[(1, 1)])
+            R += np.einsum('ki,lj,abkl->abij', T_args[2], T_args[2], H_bar_args[(2, 0)])
+            return R
+
+        # initialize G as a python dictionary
+        G_args = {}
+
+        # calculation matrix element of G block by block
+        G_args[(0, 0)] = cal_G_0()
+        G_args[(1, 0)] = cal_G_I()
+        G_args[(0, 1)] = cal_G_i()
+        G_args[(1, 1)] = cal_G_Ij()
+        G_args[(2, 0)] = cal_G_IJ()
+        G_args[(0, 2)] = cal_G_ij()
+
+        return G_args
+
+    def _cal_C_matrix(self, Z_args, T_args):
+        """calculate C matrix: (e^{T^dagger}Z)_f.c."""
+        return
+
+    def _cal_rho_matrix(self, dT_args, T_args):
+        """calculate rho matrix: (e^{T^dagger}dT)_f.c."""
+        return
+
+    def _cal_D_matrix(self, dZ_args, T_args):
+        """calculate D matrix: ((e^{T^dagger}-1)dZ)_f.c."""
+        return
 
     def cal_net_residual(self, H_args, Z_args):
         """calculation net residual <\omega H_bar Z>"""
