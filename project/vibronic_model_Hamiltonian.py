@@ -540,15 +540,101 @@ class vibronic_model_hamiltonian(object):
 
     def _cal_C_matrix(self, Z_args, T_args):
         """calculate C matrix: (e^{T^dagger}Z)_f.c."""
-        return
+        A, N = self.A, self.N
+        def cal_C_0():
+            """0 block of C matrix"""
+            R = np.zeros(A)
+            R += Z_args[0]
+            R += np.einsum('k,ak->a', T_args[1], Z_args[1])
+            R += 0.5 * np.einsum('k,l,akl->a', T_args[1], T_args[1], Z_args[2])
+            R += 0.5 * np.einsum('kl,akl->a', T_args[2], Z_args[2])
+            return R
+
+        def cal_C_1():
+            """1 block of C matrix"""
+            R = np.zeros([A, 2*N])
+            R += Z_args[1]
+            R += np.einsum('k,aki->ai', T_args[1], Z_args[2])
+            return R
+
+        def cal_C_2():
+            """2 block of C matrix"""
+            R = np.zeros([A, 2*N, 2*N])
+            R += Z_args[2]
+            return R
+
+        # intialize C amplitude a a python library
+        C_args = {}
+
+        C_args[0] = cal_C_0()
+        C_args[1] = cal_C_1()
+        C_args[2] = cal_C_2()
+
+        return C_args
 
     def _cal_rho_matrix(self, dT_args, T_args):
         """calculate rho matrix: (e^{T^dagger}dT)_f.c."""
-        return
+        A, N = self.A, self.N
+        def cal_rho_0():
+            """0 block of rho matrix"""
+            R = np.zeros(A)
+            R += dT_args[0]
+            R += np.einsum('k,ak->a', T_args[1], dT_args[1])
+            R += 0.5 * np.einsum('k,l,akl->a', T_args[1], T_args[1], dT_args[2])
+            R += 0.5 * np.einsum('kl,akl->a', T_args[2], dT_args[2])
+            return R
+
+        def cal_rho_1():
+            """1 block of rho matrix"""
+            R = np.zeros([A, 2*N])
+            R += dT_args[1]
+            R += np.einsum('k,aki->ai', T_args[1], dT_args[2])
+            return R
+
+        def cal_rho_2():
+            """2 block of rho matrix"""
+            R = np.zeros([A, 2*N, 2*N])
+            R += dT_args[2]
+            return R
+
+        # intialize rho amplitude a a python library
+        rho_args = {}
+
+        rho_args[0] = cal_rho_0()
+        rho_args[1] = cal_rho_1()
+        rho_args[2] = cal_rho_2()
+
+        return rho_args
 
     def _cal_D_matrix(self, dZ_args, T_args):
         """calculate D matrix: ((e^{T^dagger}-1)dZ)_f.c."""
-        return
+        A, N = self.A, self.N
+        def cal_D_0():
+            """0 block of D matrix"""
+            R = np.zeros(A)
+            R += np.einsum('k,ak->a', T_args[1], dZ_args[1])
+            R += 0.5 * np.einsum('k,l,akl->a', T_args[1], T_args[1], dZ_args[2])
+            R += 0.5 * np.einsum('kl,akl->a', T_args[2], dZ_args[2])
+            return R
+
+        def cal_D_1():
+            """1 block of D matrix"""
+            R = np.zeros([A, 2*N])
+            R += np.einsum('k,aki->ai', T_args[1], dZ_args[2])
+            return R
+
+        def cal_D_2():
+            """2 block of D matrix"""
+            R = np.zeros([A, 2*N, 2*N])
+            return R
+
+        # intialize D amplitude a a python library
+        D_args = {}
+
+        D_args[0] = cal_D_0()
+        D_args[1] = cal_D_1()
+        D_args[2] = cal_D_2()
+        return D_args
 
     def cal_net_residual(self, H_args, Z_args):
         """calculation net residual <\omega H_bar Z>"""
