@@ -799,22 +799,22 @@ class vibronic_model_hamiltonian(object):
         H_bar = self.sim_trans_H(self.H_tilde_reduce, T_args)
 
         # perform a second similarity transformation of the Hamiltonian
-        G_args = self._cal_G_matrix(H_bar, T_args, debug_flag=True)
+        G_args = self._cal_G_matrix(H_bar, T_args, debug_flag=False)
 
         # calculate C matrix
-        C_args = self._cal_C_matrix(Z_args, T_args, debug_flag=True)
+        C_args = self._cal_C_matrix(Z_args, T_args, debug_flag=False)
 
         # calculation net residual
-        net_residual = self.cal_net_residual(G_args, C_args, debug_flag=True)
+        net_residual = self.cal_net_residual(G_args, C_args, debug_flag=False)
 
         # calculate T residual
-        t_residual = cal_T_residual(G_args, C_args, debug_flag=True)
+        t_residual = cal_T_residual(G_args, C_args, debug_flag=False)
 
         # calculation rho matrix
-        rho_args = self._cal_rho_matrix(t_residual, T_args, debug_flag=True)
+        rho_args = self._cal_rho_matrix(t_residual, T_args, debug_flag=False)
 
         # calculate Z residual
-        z_residual = cal_Z_residual(net_residual, rho_args, C_args, debug_flag=True)
+        z_residual = cal_Z_residual(net_residual, rho_args, C_args, debug_flag=False)
 
         return t_residual, z_residual
 
