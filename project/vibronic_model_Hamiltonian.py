@@ -685,17 +685,17 @@ class vibronic_model_hamiltonian(object):
     def cal_T_Z_residual(self, T_args, Z_args):
         """calculation T and Z residual"""
         N = self.N
-        def cal_T_residual(H_args, Z_args, debug_flag=False):
+        def cal_T_residual(H_input, Z_input, debug_flag=False):
             """calculation T residual from Ehrenfest parameterization"""
 
             def cal_dT_1():
                 """1 block of T residual"""
-                R = np.einsum('a,abi,b->i', Z_args[0], H_args[(1, 0)], Z_args[0]) / np.einsum('a,a->', Z_args[0], Z_args[0])
+                R = np.einsum('a,abi,b->i', Z_input[0], H_input[(1, 0)], Z_input[0]) / np.einsum('a,a->', Z_input[0], Z_input[0])
                 return R
 
             def cal_dT_2():
                 """2 block of T residual"""
-                R = np.einsum('a,abij,b->ij', Z_args[0], H_args[(2, 0)], Z_args[0]) / np.einsum('a,a->', Z_args[0], Z_args[0])
+                R = np.einsum('a,abij,b->ij', Z_input[0], H_input[(2, 0)], Z_input[0]) / np.einsum('a,a->', Z_input[0], Z_input[0])
                 return R
 
             residual = {}
@@ -709,7 +709,7 @@ class vibronic_model_hamiltonian(object):
 
             return residual
 
-        def cal_Z_residual(R_args, rho_args, C_args, debug_flag=False):
+        def cal_Z_residual(R_args, rho_input, C_input, debug_flag=False):
             """calculation Z residual by strustracting T residual from the net residual"""
             def cal_rho_C():
                 """calculate (<y,theta|Omega^dagger_v rho C|x,theta> term in the Z constribution)"""
@@ -718,15 +718,15 @@ class vibronic_model_hamiltonian(object):
                 R ={}
 
                 # 0 block contribution
-                R[0] = rho_args[0] * C_args[0]
+                R[0] = rho_input[0] * C_input[0]
 
                 # 1 block contribution
-                R[1] = np.einsum('i,y->yi', rho_args[1], C_args[0])
-                R[1] += rho_args[0] * C_args[1]
+                R[1] = np.einsum('i,y->yi', rho_input[1], C_input[0])
+                R[1] += rho_input[0] * C_input[1]
 
                 # 2 blolck contribution
-                R[2] = np.einsum('i,yj->yij', rho_args[1], C_args[1])
-                R[2] += 0.5 * rho_args[0] * C_args[2]
+                R[2] = np.einsum('i,yj->yij', rho_input[1], C_input[1])
+                R[2] += 0.5 * rho_input[0] * C_input[2]
 
                 return R
 

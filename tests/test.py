@@ -40,7 +40,7 @@ def read_in_model(dir, file_name):
 def main():
     """main function that run TFCC simulation"""
     # define number of vibrational model
-    name = "displaced_6.json"
+    name = "displaced_1.json"
 
     # readin model parameters and feed into the main simulation code
     num_mode, num_surf, VE, Freq, LCP = read_in_model(inputdir, name)
