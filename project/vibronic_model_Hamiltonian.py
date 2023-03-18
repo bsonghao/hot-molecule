@@ -475,7 +475,7 @@ class vibronic_model_hamiltonian(object):
 
         return sim_h
 
-    def _cal_G_matrix(self, H_bar_args, T_args):
+    def _cal_G_matrix(self, H_bar_args, T_args, debug_flag=False):
         """calculate a second similarity tranformation (e^{T^dagger}H_bar)_f.c."""
         A, N = self.A, self.N
         def cal_G_0():
@@ -536,9 +536,14 @@ class vibronic_model_hamiltonian(object):
         G_args[(2, 0)] = cal_G_IJ()
         G_args[(0, 2)] = cal_G_ij()
 
+        if debug_flag:
+            print("### G matrix")
+            for block in G_args.keys():
+                print("Block {:}:\n {:}".format(block, G_args[block]))
+
         return G_args
 
-    def _cal_C_matrix(self, Z_args, T_args):
+    def _cal_C_matrix(self, Z_args, T_args, debug_flag=False):
         """calculate C matrix: (e^{T^dagger}Z)_f.c."""
         A, N = self.A, self.N
         def cal_C_0():
@@ -570,30 +575,34 @@ class vibronic_model_hamiltonian(object):
         C_args[1] = cal_C_1()
         C_args[2] = cal_C_2()
 
+        if debug_flag:
+            print("### rho matrix")
+            for block in C_args.keys():
+                print("Block {:}:\n{:}".format(block, C_args[block]))
+
         return C_args
 
-    def _cal_rho_matrix(self, dT_args, T_args):
+    def _cal_rho_matrix(self, dT_args, T_args, debug_flag=False):
         """calculate rho matrix: (e^{T^dagger}dT)_f.c."""
         A, N = self.A, self.N
         def cal_rho_0():
             """0 block of rho matrix"""
-            R = np.zeros(A)
-            R += dT_args[0]
-            R += np.einsum('k,ak->a', T_args[1], dT_args[1])
-            R += 0.5 * np.einsum('k,l,akl->a', T_args[1], T_args[1], dT_args[2])
-            R += 0.5 * np.einsum('kl,akl->a', T_args[2], dT_args[2])
+            R = 0
+            R += np.einsum('k,k->', T_args[1], dT_args[1])
+            R += 0.5 * np.einsum('k,l,kl->', T_args[1], T_args[1], dT_args[2])
+            R += 0.5 * np.einsum('kl,kl->', T_args[2], dT_args[2])
             return R
 
         def cal_rho_1():
             """1 block of rho matrix"""
-            R = np.zeros([A, 2*N])
+            R = np.zeros([2*N])
             R += dT_args[1]
-            R += np.einsum('k,aki->ai', T_args[1], dT_args[2])
+            R += np.einsum('k,ki->i', T_args[1], dT_args[2])
             return R
 
         def cal_rho_2():
             """2 block of rho matrix"""
-            R = np.zeros([A, 2*N, 2*N])
+            R = np.zeros([2*N, 2*N])
             R += dT_args[2]
             return R
 
@@ -604,39 +613,14 @@ class vibronic_model_hamiltonian(object):
         rho_args[1] = cal_rho_1()
         rho_args[2] = cal_rho_2()
 
+        if debug_flag:
+            print("### rho matrix")
+            for block in rho_args.keys():
+                print("Block:{:}:\n{:}".format(block, rho_args[block]))
+
         return rho_args
 
-    def _cal_D_matrix(self, dZ_args, T_args):
-        """calculate D matrix: ((e^{T^dagger}-1)dZ)_f.c."""
-        A, N = self.A, self.N
-        def cal_D_0():
-            """0 block of D matrix"""
-            R = np.zeros(A)
-            R += np.einsum('k,ak->a', T_args[1], dZ_args[1])
-            R += 0.5 * np.einsum('k,l,akl->a', T_args[1], T_args[1], dZ_args[2])
-            R += 0.5 * np.einsum('kl,akl->a', T_args[2], dZ_args[2])
-            return R
-
-        def cal_D_1():
-            """1 block of D matrix"""
-            R = np.zeros([A, 2*N])
-            R += np.einsum('k,aki->ai', T_args[1], dZ_args[2])
-            return R
-
-        def cal_D_2():
-            """2 block of D matrix"""
-            R = np.zeros([A, 2*N, 2*N])
-            return R
-
-        # intialize D amplitude a a python library
-        D_args = {}
-
-        D_args[0] = cal_D_0()
-        D_args[1] = cal_D_1()
-        D_args[2] = cal_D_2()
-        return D_args
-
-    def cal_net_residual(self, H_args, Z_args):
+    def cal_net_residual(self, H_args, Z_args, debug_flag=False):
         """calculation net residual <\omega H_bar Z>"""
         A, N = self.A, self.N
 
@@ -691,12 +675,17 @@ class vibronic_model_hamiltonian(object):
         residual[1] = f_z_I(H_args, Z_args)
         residual[2] = f_z_IJ(H_args, Z_args)
 
+        if debug_flag:
+            print("### Net residual:")
+            for block in residual.keys():
+                print("Block :{:}\n{:}".format(block, residual[block]))
+
         return residual
 
     def cal_T_Z_residual(self, T_args, Z_args):
         """calculation T and Z residual"""
         N = self.N
-        def cal_T_residual(H_args, Z_args):
+        def cal_T_residual(H_args, Z_args, debug_flag=False):
             """calculation T residual from Ehrenfest parameterization"""
 
             def cal_dT_1():
@@ -713,45 +702,119 @@ class vibronic_model_hamiltonian(object):
             residual[1] = cal_dT_1()
             residual[2] = cal_dT_2()
 
+            if debug_flag:
+                print("### Ehrenfest parameteried T residual:")
+                for block in residual.keys():
+                    print("Block{:}:\n{:}".format(block, residual[block]))
+
             return residual
 
-        def cal_Z_residual(R_args, Z_args, dT_args):
+        def cal_Z_residual(R_args, rho_args, C_args, debug_flag=False):
             """calculation Z residual by strustracting T residual from the net residual"""
+            def cal_rho_C():
+                """calculate (<y,theta|Omega^dagger_v rho C|x,theta> term in the Z constribution)"""
+
+                # initialize as an python dictionary
+                R ={}
+
+                # 0 block contribution
+                R[0] = rho_args[0] * C_args[0]
+
+                # 1 block contribution
+                R[1] = np.einsum('i,y->yi', rho_args[1], C_args[0])
+                R[1] += rho_args[0] * C_args[1]
+
+                # 2 blolck contribution
+                R[2] = np.einsum('i,yj->yij', rho_args[1], C_args[1])
+                R[2] += 0.5 * rho_args[0] * C_args[2]
+
+                return R
+
+            def cal_D_0():
+                """0 block of D matrix"""
+                R = np.zeros(A)
+                R += np.einsum('k,ak->a', T_args[1], dZ_args[1])
+                R += 0.5 * np.einsum('k,l,akl->a', T_args[1], T_args[1], dZ_args[2])
+                R += 0.5 * np.einsum('kl,akl->a', T_args[2], dZ_args[2])
+                return R
+
+            def cal_D_1():
+                """1 block of D matrix"""
+                R = np.zeros([A, 2*N])
+                R += np.einsum('k,aki->ai', T_args[1], dZ_args[2])
+                return R
+
+
             def cal_dZ_0():
                 """(0, 0) block of Z residual"""
                 R = R_args[0]
+                R += rho_C[0]
+                R += D_args[0]
                 return R
 
             def cal_dZ_I():
                 """(1, 0) block of Z residual"""
                 R = R_args[1]
-                R -= np.einsum('i,a->ai', dT_args[1], Z_args[0])
+                R += rho_C[1]
+                R += D_args[1]
+
                 return R
 
             def cal_dZ_IJ():
                 """(2, 0) block of Z residual"""
                 R = R_args[2]
-                R -= np.einsum('i,aj->aij', dT_args[1], Z_args[1])
-                R -= np.einsum('j,ai->aij', dT_args[1], Z_args[1])
-                R -= np.einsum('ij,a->aij', dT_args[2], Z_args[0])
+                R += rho_C[2]
+
                 return R
 
-            residual = {}
-            residual[0] = cal_dZ_0()
-            residual[1] = cal_dZ_I()
-            residual[2] = cal_dZ_IJ()
+            A, N = self.A, self.N
+            # calculation rho * C
+            rho_C = cal_rho_C()
 
-            return residual
+            # recursived solve equation for dZ / dbeta
+
+            ## initialize D_args and Z_args as python dictionnary
+            D_args = {}
+            dZ_args = {}
+
+            # solve equation for "2" block
+            dZ_args[2] = cal_dZ_IJ()
+            D_args[1] = cal_D_1()
+
+            # solve equation for "1" block
+            dZ_args[1] = cal_dZ_I()
+            D_args[0] = cal_D_0()
+
+            # solve equation for "0" block
+            dZ_args[0] = cal_dZ_0()
+
+            if debug_flag:
+                print("### Z residual:")
+                for block in dZ_args.keys():
+                    print("Block{:}:\n{:}".format(block, dZ_args[block]))
+
+            return dZ_args
 
         # calculate similarity transfromed Hamiltonian
         H_bar = self.sim_trans_H(self.H_tilde_reduce, T_args)
 
+        # perform a second similarity transformation of the Hamiltonian
+        G_args = self._cal_G_matrix(H_bar, T_args, debug_flag=True)
+
+        # calculate C matrix
+        C_args = self._cal_C_matrix(Z_args, T_args, debug_flag=True)
+
         # calculation net residual
-        net_residual = self.cal_net_residual(H_bar, Z_args)
+        net_residual = self.cal_net_residual(G_args, C_args, debug_flag=True)
+
         # calculate T residual
-        t_residual = cal_T_residual(H_bar, Z_args)
+        t_residual = cal_T_residual(G_args, C_args, debug_flag=True)
+
+        # calculation rho matrix
+        rho_args = self._cal_rho_matrix(t_residual, T_args, debug_flag=True)
+
         # calculate Z residual
-        z_residual = cal_Z_residual(net_residual, Z_args, t_residual)
+        z_residual = cal_Z_residual(net_residual, rho_args, C_args, debug_flag=True)
 
         return t_residual, z_residual
 
