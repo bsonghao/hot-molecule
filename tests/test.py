@@ -40,7 +40,7 @@ def read_in_model(dir, file_name):
 def main():
     """main function that run TFCC simulation"""
     # define number of vibrational model
-    name = "displaced_1.json"
+    name = "displaced_6.json"
 
     # readin model parameters and feed into the main simulation code
     num_mode, num_surf, VE, Freq, LCP = read_in_model(inputdir, name)
@@ -55,7 +55,7 @@ def main():
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, VE, num_mode, num_surf, FC=False)
     # Bogoliubov transform the Hamiltonian
-    model.thermal_field_transform(T_ref=1e3)
+    model.thermal_field_transform(T_ref=2e3)
     # merge difference blocks of the Bogoliubov transformed Hamiltonian
     model.reduce_H_tilde()
     # TFCC progration to calculation thermal properties
