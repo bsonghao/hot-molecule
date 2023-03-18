@@ -586,9 +586,6 @@ class vibronic_model_hamiltonian(object):
         # calculation net residual
         net_residual = self.cal_net_residual(H_bar, Z_args)
         # calculate T residual
-        # print(H_bar.keys())
-        # print(Z_args.keys())
-        # os._exit(0)
         t_residual = cal_T_residual(H_bar, Z_args)
         # calculate Z residual
         z_residual = cal_Z_residual(net_residual, Z_args, t_residual)

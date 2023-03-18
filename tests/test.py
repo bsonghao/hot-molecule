@@ -18,8 +18,8 @@ inputdir = '/Users/pauliebao/hot-molecule/data/input_json/'
 outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
-import Project
-from Project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
+import project
+from project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
 
 def read_in_model(dir, file_name):
     """read in model parameters from json file"""
