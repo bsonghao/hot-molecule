@@ -748,22 +748,22 @@ class vibronic_model_hamiltonian(object):
             def cal_dZ_0():
                 """(0, 0) block of Z residual"""
                 R = R_args[0]
-                R += rho_C[0]
-                R += D_args[0]
+                R -= rho_C[0]
+                R -= D_args[0]
                 return R
 
             def cal_dZ_I():
                 """(1, 0) block of Z residual"""
                 R = R_args[1]
-                R += rho_C[1]
-                R += D_args[1]
+                R -= rho_C[1]
+                R -= D_args[1]
 
                 return R
 
             def cal_dZ_IJ():
                 """(2, 0) block of Z residual"""
                 R = R_args[2]
-                R += rho_C[2]
+                R -= rho_C[2]
 
                 return R
 
