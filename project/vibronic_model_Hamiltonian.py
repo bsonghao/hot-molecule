@@ -606,7 +606,7 @@ class vibronic_model_hamiltonian(object):
             R += dT_args[2]
             return R
 
-        # intialize rho amplitude a a python library
+        # intialize rho amplitude a a python dictionary
         rho_args = {}
 
         rho_args[0] = cal_rho_0()
