@@ -726,7 +726,8 @@ class vibronic_model_hamiltonian(object):
 
                 # 2 blolck contribution
                 R[2] = np.einsum('i,yj->yij', rho_input[1], C_input[1])
-                R[2] += 0.5 * rho_input[0] * C_input[2]
+                R[2] += np.einsum('j,yi->yij', rho_input[1], C_input[1])
+                R[2] += rho_input[0] * C_input[2]
 
                 return R
 
