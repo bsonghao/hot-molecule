@@ -507,7 +507,7 @@ class vibronic_model_hamiltonian(object):
             """calculate (1, 1) block of G"""
             R = np.zeros([A, A, 2*N, 2*N])
             R += H_bar_args[(1, 1)]
-            R += np.einsum('jk,abik->ij', T_args[2], H_bar_args[(2, 0)])
+            R += np.einsum('jk,abik->abij', T_args[2], H_bar_args[(2, 0)])
             return R
 
         def cal_G_IJ():
