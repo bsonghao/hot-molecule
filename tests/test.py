@@ -41,7 +41,7 @@ def main():
     """main function that run TNOE simulation"""
     # Hamiltonian model parameters
     # define number of vibrational model
-    name = "displaced_6.json"
+    name = "jahnteller_6.json"
 
     num_mode, num_surf, VE, Freq, LCP = read_in_model(inputdir, name)
 
