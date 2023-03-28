@@ -475,7 +475,7 @@ class vibronic_model_hamiltonian(object):
 
         return sim_h
 
-    def _cal_G_matrix(self, H_bar_args, T_args, debug_flag=False):
+    def _cal_G_matrix(self, H_bar_args, T_args, debug_flag=False, quadratic_flag=False):
         """calculate a second similarity tranformation (e^{T^dagger}H_bar)_f.c."""
         A, N = self.A, self.N
         def cal_G_0():
@@ -484,7 +484,8 @@ class vibronic_model_hamiltonian(object):
             R += H_bar_args[(0, 0)]
             R += np.einsum('k,abk->ab', T_args[1], H_bar_args[(1, 0)])
             R += 0.5 * np.einsum('k,l,abkl->ab', T_args[1], T_args[1], H_bar_args[(2, 0)])
-            R += 0.5 * np.einsum('kl,abkl->ab', T_args[2], H_bar_args[(2, 0)])
+            if quadratic_flag:
+                R += 0.5 * np.einsum('kl,abkl->ab', T_args[2], H_bar_args[(2, 0)])
             return R
 
         def cal_G_I():
@@ -499,15 +500,17 @@ class vibronic_model_hamiltonian(object):
             R = np.zeros([A, A, 2*N])
             R += H_bar_args[(0, 1)]
             R += np.einsum('k,abki->abi', T_args[1], H_bar_args[(1, 1)])
-            R += np.einsum('ki,abk->abi', T_args[2], H_bar_args[(1, 0)])
-            R += np.einsum('k,li,abkl->abi', T_args[1], T_args[2], H_bar_args[(2, 0)])
+            if quadratic_flag:
+                R += np.einsum('ki,abk->abi', T_args[2], H_bar_args[(1, 0)])
+                R += np.einsum('k,li,abkl->abi', T_args[1], T_args[2], H_bar_args[(2, 0)])
             return R
 
         def cal_G_Ij():
             """calculate (1, 1) block of G"""
             R = np.zeros([A, A, 2*N, 2*N])
             R += H_bar_args[(1, 1)]
-            R += np.einsum('jk,abik->abij', T_args[2], H_bar_args[(2, 0)])
+            if quadratic_flag:
+                R += np.einsum('jk,abik->abij', T_args[2], H_bar_args[(2, 0)])
             return R
 
         def cal_G_IJ():
@@ -520,9 +523,10 @@ class vibronic_model_hamiltonian(object):
             """calculate (0, 2) block of G"""
             R = np.zeros([A, A, 2*N, 2*N])
             R += H_bar_args[(0, 2)]
-            R += np.einsum('kj,abki->abij', T_args[2], H_bar_args[(1, 1)])
-            R += np.einsum('ki,abkj->abij', T_args[2], H_bar_args[(1, 1)])
-            R += np.einsum('ki,lj,abkl->abij', T_args[2], T_args[2], H_bar_args[(2, 0)])
+            if quadratic_flag:
+                R += np.einsum('kj,abki->abij', T_args[2], H_bar_args[(1, 1)])
+                R += np.einsum('ki,abkj->abij', T_args[2], H_bar_args[(1, 1)])
+                R += np.einsum('ki,lj,abkl->abij', T_args[2], T_args[2], H_bar_args[(2, 0)])
             return R
 
         # initialize G as a python dictionary
@@ -543,7 +547,7 @@ class vibronic_model_hamiltonian(object):
 
         return G_args
 
-    def _cal_C_matrix(self, Z_args, T_args, debug_flag=False):
+    def _cal_C_matrix(self, Z_args, T_args, debug_flag=False, quadratic_flag=False):
         """calculate C matrix: (e^{T^dagger}Z)_f.c."""
         A, N = self.A, self.N
         def cal_C_0():
@@ -552,7 +556,8 @@ class vibronic_model_hamiltonian(object):
             R += Z_args[0]
             R += np.einsum('k,ak->a', T_args[1], Z_args[1])
             R += 0.5 * np.einsum('k,l,akl->a', T_args[1], T_args[1], Z_args[2])
-            R += 0.5 * np.einsum('kl,akl->a', T_args[2], Z_args[2])
+            if quadratic_flag:
+                R += 0.5 * np.einsum('kl,akl->a', T_args[2], Z_args[2])
             return R
 
         def cal_C_1():
@@ -582,7 +587,7 @@ class vibronic_model_hamiltonian(object):
 
         return C_args
 
-    def _cal_rho_matrix(self, dT_args, T_args, debug_flag=False):
+    def _cal_rho_matrix(self, dT_args, T_args, debug_flag=False, quadratic_flag=False):
         """calculate rho matrix: (e^{T^dagger}dT)_f.c."""
         A, N = self.A, self.N
         def cal_rho_0():
@@ -590,7 +595,8 @@ class vibronic_model_hamiltonian(object):
             R = 0
             R += np.einsum('k,k->', T_args[1], dT_args[1])
             R += 0.5 * np.einsum('k,l,kl->', T_args[1], T_args[1], dT_args[2])
-            R += 0.5 * np.einsum('kl,kl->', T_args[2], dT_args[2])
+            if quadratic_flag:
+                R += 0.5 * np.einsum('kl,kl->', T_args[2], dT_args[2])
             return R
 
         def cal_rho_1():
@@ -800,10 +806,10 @@ class vibronic_model_hamiltonian(object):
         H_bar = self.sim_trans_H(self.H_tilde_reduce, T_args)
 
         # perform a second similarity transformation of the Hamiltonian
-        G_args = self._cal_G_matrix(H_bar, T_args, debug_flag=False)
+        G_args = self._cal_G_matrix(H_bar, T_args, debug_flag=False, quadratic_flag=False)
 
         # calculate C matrix
-        C_args = self._cal_C_matrix(Z_args, T_args, debug_flag=False)
+        C_args = self._cal_C_matrix(Z_args, T_args, debug_flag=False, quadratic_flag=False)
 
         # calculation net residual
         net_residual = self.cal_net_residual(G_args, C_args, debug_flag=False)
@@ -812,7 +818,7 @@ class vibronic_model_hamiltonian(object):
         t_residual = cal_T_residual(G_args, C_args, debug_flag=False)
 
         # calculation rho matrix
-        rho_args = self._cal_rho_matrix(t_residual, T_args, debug_flag=False)
+        rho_args = self._cal_rho_matrix(t_residual, T_args, debug_flag=False, quadratic_flag=False)
 
         # calculate Z residual
         z_residual = cal_Z_residual(net_residual, rho_args, C_args, debug_flag=False)
