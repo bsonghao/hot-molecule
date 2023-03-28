@@ -652,7 +652,7 @@ class vibronic_model_hamiltonian(object):
             self.internal_energy.append(E)
 
             print("step {:}:".format(i))
-            print("max z_0 amplitude:{:}".format(Z_amplitude[0]))
+            print("max z_0 amplitude:{:}".format(abs(Z_amplitude[0]).max()))
             print("max z_1 amplitude:{:}".format(abs(Z_amplitude[1]).max()))
             print("max z_2 amplitude:{:}".format(abs(Z_amplitude[2]).max()))
             print("max t_1 ampltiude:{:}".format(abs(T_amplitude[1]).max()))
