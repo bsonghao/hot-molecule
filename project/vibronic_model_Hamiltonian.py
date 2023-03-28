@@ -688,7 +688,7 @@ class vibronic_model_hamiltonian(object):
 
         return residual
 
-    def cal_T_Z_residual(self, T_args, Z_args):
+    def cal_T_Z_residual(self, T_args, Z_args, surface_label, fix_T_flag=False, quadratic_flag=False):
         """calculation T and Z residual"""
         N = self.N
         def cal_T_residual(H_input, Z_input, debug_flag=False):
@@ -805,11 +805,20 @@ class vibronic_model_hamiltonian(object):
         # calculate similarity transfromed Hamiltonian
         H_bar = self.sim_trans_H(self.H_tilde_reduce, T_args)
 
+        # fix the T ampitude in the modified projection manifold to be its initial value
+        # this is not a good practice single the new T_args over write the old T_args
+        # for simplicity, I will leave it in this way currently
+        if fix_T_flag:
+            for block in T_args.keys():
+                T_args[block] = self.initial_T_amplitude[block][surface_label, :]
+
+
+
         # perform a second similarity transformation of the Hamiltonian
-        G_args = self._cal_G_matrix(H_bar, T_args, debug_flag=False, quadratic_flag=False)
+        G_args = self._cal_G_matrix(H_bar, T_args, debug_flag=False, quadratic_flag=quadratic_flag)
 
         # calculate C matrix
-        C_args = self._cal_C_matrix(Z_args, T_args, debug_flag=False, quadratic_flag=False)
+        C_args = self._cal_C_matrix(Z_args, T_args, debug_flag=False, quadratic_flag=quadratic_flag)
 
         # calculation net residual
         net_residual = self.cal_net_residual(G_args, C_args, debug_flag=False)
@@ -818,7 +827,7 @@ class vibronic_model_hamiltonian(object):
         t_residual = cal_T_residual(G_args, C_args, debug_flag=False)
 
         # calculation rho matrix
-        rho_args = self._cal_rho_matrix(t_residual, T_args, debug_flag=False, quadratic_flag=False)
+        rho_args = self._cal_rho_matrix(t_residual, T_args, debug_flag=False, quadratic_flag=quadratic_flag)
 
         # calculate Z residual
         z_residual = cal_Z_residual(net_residual, rho_args, C_args, debug_flag=False)
@@ -837,6 +846,9 @@ class vibronic_model_hamiltonian(object):
         A, N = self.A, self.N
         # map initial T amplitude
         T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial)
+
+        # store the initial T amplitude to be the class instance
+        self.initial_T_amplitude = T_amplitude
 
         # define the temperature grid for the integration
         beta_initial = 1. / (self.Kb * T_initial)
@@ -863,7 +875,7 @@ class vibronic_model_hamiltonian(object):
                     t_amplitude[block] = T_amplitude[block][x, :]
                 for block in Z_amplitude.keys():
                     z_amplitude[block] = Z_amplitude[block][x, :]
-                t_residual, z_residual = self.cal_T_Z_residual(t_amplitude, z_amplitude)
+                t_residual, z_residual = self.cal_T_Z_residual(t_amplitude, z_amplitude, x, fix_T_flag=True, quadratic_flag=True)
                 for block in t_residual.keys():
                     T_residual[block][x, :] += t_residual[block]
                 for block in z_residual.keys():
@@ -901,7 +913,7 @@ class vibronic_model_hamiltonian(object):
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"thermal_data_TFCC_mod_proj.csv", index=False)
+        df.to_csv(output_path+"thermal_data_TFCC_mod_proj_SD_fix_T.csv", index=False)
 
         return
 
