@@ -61,7 +61,7 @@ def main():
     # TFCC progration to calculation thermal properties
     model.TFCC_integration(T_initial=2e3, T_final=1e2, N_step=10000, output_path=outputdir)
     # Using the sum over states method to calculate thermal properties for benchmark purpose
-    # model.sum_over_states(basis_size=40, output_path=outputdir, T_initial= 2e3, T_final=100, N_step=10000, compare_with_TNOE=False)
+    model.sum_over_states(basis_size=40, output_path=outputdir, T_initial= 2e3, T_final=100, N_step=10000, compare_with_TNOE=False)
 
     return
 

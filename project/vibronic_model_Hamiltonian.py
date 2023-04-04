@@ -752,11 +752,22 @@ class vibronic_model_hamiltonian(object):
                 return R
 
 
-            def cal_dZ_0():
+            def cal_dZ_0(modified_flag=False):
                 """(0, 0) block of Z residual"""
-                R = R_args[0]
-                R -= rho_C[0]
-                R -= D_args[0]
+                if modified_flag:
+                    R = R_args[0]
+                    R -= rho_C[0]
+                    R -= D_args[0]
+
+                else:
+                    # initialize as zero
+                    R = np.zeros(A)
+
+                    R += np.einsum('abk,bk->a', H_bar[(0, 1)], Z_args[1])
+                    R += 0.5 * np.einsum('abkl,bkl->a', H_bar[(0, 2)], Z_args[2])
+
+                    # disconneted CI term
+                    R += np.einsum('ab,b->a', H_bar[(0, 0)], Z_args[0])
                 return R
 
             def cal_dZ_I():
@@ -875,7 +886,7 @@ class vibronic_model_hamiltonian(object):
                     t_amplitude[block] = T_amplitude[block][x, :]
                 for block in Z_amplitude.keys():
                     z_amplitude[block] = Z_amplitude[block][x, :]
-                t_residual, z_residual = self.cal_T_Z_residual(t_amplitude, z_amplitude, x, fix_T_flag=True, quadratic_flag=True)
+                t_residual, z_residual = self.cal_T_Z_residual(t_amplitude, z_amplitude, x, fix_T_flag=False, quadratic_flag=True)
                 for block in t_residual.keys():
                     T_residual[block][x, :] += t_residual[block]
                 for block in z_residual.keys():
@@ -913,7 +924,7 @@ class vibronic_model_hamiltonian(object):
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"thermal_data_TFCC_mod_proj_SD_fix_T.csv", index=False)
+        df.to_csv(output_path+"thermal_data_TFCC_mod_proj_SD_z_0_no_mod.csv", index=False)
 
         return
 
