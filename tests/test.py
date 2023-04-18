@@ -38,10 +38,10 @@ def read_in_model(dir, file_name):
 
 
 def main():
-    """main function that run TNOE simulation"""
+    """main function that run TFCC simulation"""
     # Hamiltonian model parameters
     # define number of vibrational model
-    name = "jahnteller_6.json"
+    name = "displaced_6_new.json"
 
     num_mode, num_surf, VE, Freq, LCP = read_in_model(inputdir, name)
 
@@ -57,16 +57,10 @@ def main():
     # Bogoliubov transform the Hamiltonian
     model.thermal_field_transform(T_ref=1e3)
     model.reduce_H_tilde()
-    # model._map_initial_amplitude(T_initial=2e3)
-    # model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=2e3, T_final=1e2, N_step=10000, compare_with_TNOE=False)
+    # benchmark with the sum over state method
+    model.sum_over_states(basis_size=40, output_path=outputdir, T_initial=2e3, T_final=1e2, N_step=10000, compare_with_TNOE=False)
+    # run TFCC simulation
     model.TFCC_integration(T_initial=2e3, T_final=1e2, N_step=10000, output_path=outputdir)
-    # model._map_initial_amplitude(T_initial=1e4)
-
-    # model.sum_over_states(basis_size=40, output_path=outputdir, compare_with_TFCC=False, T_grid=np.linspace(100, 10000, 10000))
-    # model._map_initial_T_amplitude_from_FCI(T_initial=1000, basis_size=10)
-    # model._map_initial_T_amplitude(T_initial=10000)
-    # model.plot_thermal()
-    #model._map_initial_T_amplitude(T_initial=1000.)
 
     return
 
