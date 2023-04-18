@@ -19,9 +19,9 @@ inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/'
 outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
-import Project
-from Project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
-from Project.vibronic import vIO, VMK
+import project
+from project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
+from project.vibronic import vIO, VMK
 
 order_dict = {
     0: "constant",

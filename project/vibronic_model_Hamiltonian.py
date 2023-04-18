@@ -26,8 +26,8 @@ import itertools as it
 import opt_einsum as oe
 
 # local import
-from Project.vibronic import vIO, VMK
-from Project.log_conf import log
+from project.vibronic import vIO, VMK
+from project.log_conf import log
 
 
 

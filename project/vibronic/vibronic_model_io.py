@@ -15,7 +15,7 @@ from numpy import float64 as F64
 from numpy import complex128 as C128
 
 # local imports
-from Project.log_conf import log
+from project.log_conf import log
 from .vibronic_model_keys import VibronicModelKeys as VMK
 from . import model_op
 
