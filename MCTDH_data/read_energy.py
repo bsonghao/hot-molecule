@@ -66,14 +66,14 @@ class read_energy(object):
         def Cal_partition_function(E, T):
             """ compute partition function """
             # extract GS energy
-            E = E - E[0]
+            # E = E - E[0]
             part = sum(np.exp(-E / (self.Kb * T)))
             return part
 
         def Cal_thermal_internal_energy(E, T, Z):
             """ compute thermal_internal_energy """
             # extract GS energy
-            E = E - E[0]
+            # E = E - E[0]
             energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
