@@ -27,12 +27,14 @@ import opt_einsum as oe
 class vibronic_model_hamiltonian(object):
     """ vibronic model hamiltonian class implement TF-VECC approach to simulation thermal properties of vibronic models. """
 
-    def __init__(self, freq, LCP, QCP, VE, num_mode):
+    def __init__(self, freq, LCP, QCP, CCP, QQCP, VE, num_mode):
         """ initialize hamiltonian parameters:
         freq: vibrational frequencies
-        LCP: linear coupling_constants
-        QCP: quadratic coupling constant
-        VE" vertical energy
+        LCP: linear coupling constants
+        QCP: quadratic coupling constants
+        CCP: cubic coupling constants
+        QQCP: quadruple coupling constants
+        VE: vertical energy
         num_mode: number of vibration modes
         """
 
@@ -41,6 +43,8 @@ class vibronic_model_hamiltonian(object):
         self.Freq = freq
         self.LCP = LCP
         self.QCP = QCP
+        self.CCP = CCP
+        self.QQCP = QQCP
         self.VE = VE
 
         # Boltzmann constant (eV K-1)
@@ -50,16 +54,30 @@ class vibronic_model_hamiltonian(object):
         # and we represent the Hamitlnian in the form of second quantization
         self.H = dict()
         # constant
-        self.H[(0, 0)] = VE + 0.5 * np.trace(QCP) + 0.5 * sum(freq)
+        self.H[(0, 0)] = VE + 0.5 * np.trace(QCP) + 0.5 * sum(freq) + 3. / 4. np.einsum('iijj->', QQCP)
         # first order
-        self.H[(1, 0)] = LCP / np.sqrt(2)
-        self.H[(0, 1)] = LCP / np.sqrt(2)
+        self.H[(1, 0)] = LCP / np.sqrt(2) + 3 / 2**1.5 * np.einsum('ijj->i', CCP)
+        self.H[(0, 1)] = LCP / np.sqrt(2) + 3 / 2**1.5 * np.einsum('ijj->i', CCP)
         # second order
         self.H[(1, 1)] = np.diag(freq)
         self.H[(1, 1)] += QCP
+        self.H[(1, 1)] + 3 * np.einsum('ijkk->ij', QQCP)
 
-        self.H[(2, 0)] = QCP / 2
-        self.H[(0, 2)] = QCP / 2
+        self.H[(2, 0)] = QCP / 2 + 1.5 * np.einsum('ijkk->ij', QQCP)
+        self.H[(0, 2)] = QCP / 2 + 1.5 * np.einsum('ijkk->ij', QQCP)
+
+        #third order
+        self.H[(3, 0)] = 1 / 2**1.5 * CCP
+        self.H[(0, 3)] = 1 / 2**1.5 * CCP
+        self.H[(1, 2)] = 3 / 2**1.5 * CCP
+        self.H[(2, 1)] = 3 / 2**1.5 * CCP
+
+        # fourth order
+        self.H[(4, 0)] = 0.25 * QQCP
+        self.H[(0, 4)] = 0.25 * QQCP
+        self.H[(1, 3)] = QQCP
+        self.H[(3, 1)] = QQCP
+        self.H[(2, 2)] = 1.5 * QQCP
 
         print("number of vibrational mode {:}".format(self.N))
         print("##### Hamiltonian parameters ######")
