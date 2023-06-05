@@ -54,30 +54,30 @@ class vibronic_model_hamiltonian(object):
         # and we represent the Hamitlnian in the form of second quantization
         self.H = dict()
         # constant
-        self.H[(0, 0)] = VE + 0.5 * np.trace(QCP) + 0.5 * sum(freq) + 3. / 4. np.einsum('iijj->', QQCP)
+        self.H[(0, 0)] = VE + 0.25 * np.trace(QCP) + 0.5 * sum(freq) + 1. / 24. np.einsum('iijj->', QQCP)
         # first order
-        self.H[(1, 0)] = LCP / np.sqrt(2) + 3 / 2**1.5 * np.einsum('ijj->i', CCP)
-        self.H[(0, 1)] = LCP / np.sqrt(2) + 3 / 2**1.5 * np.einsum('ijj->i', CCP)
+        self.H[(1, 0)] = LCP / np.sqrt(2) + 1 / 2**2.5 * np.einsum('ijj->i', CCP)
+        self.H[(0, 1)] = LCP / np.sqrt(2) + 1 / 2**2.5 * np.einsum('ijj->i', CCP)
         # second order
         self.H[(1, 1)] = np.diag(freq)
-        self.H[(1, 1)] += QCP
-        self.H[(1, 1)] + 3 * np.einsum('ijkk->ij', QQCP)
+        self.H[(1, 1)] += 0.5 * QCP
+        self.H[(1, 1)] + 1. / 8. * np.einsum('ijkk->ij', QQCP)
 
-        self.H[(2, 0)] = QCP / 2 + 1.5 * np.einsum('ijkk->ij', QQCP)
-        self.H[(0, 2)] = QCP / 2 + 1.5 * np.einsum('ijkk->ij', QQCP)
+        self.H[(2, 0)] = 0.5 * QCP + 1. / 8. * np.einsum('ijkk->ij', QQCP)
+        self.H[(0, 2)] = 0.5 * QCP + 1. / 8. * np.einsum('ijkk->ij', QQCP)
 
         #third order
         self.H[(3, 0)] = 1 / 2**1.5 * CCP
         self.H[(0, 3)] = 1 / 2**1.5 * CCP
-        self.H[(1, 2)] = 3 / 2**1.5 * CCP
-        self.H[(2, 1)] = 3 / 2**1.5 * CCP
+        self.H[(1, 2)] = 1 / 2**1.5 * CCP
+        self.H[(2, 1)] = 1 / 2**1.5 * CCP
 
         # fourth order
         self.H[(4, 0)] = 0.25 * QQCP
         self.H[(0, 4)] = 0.25 * QQCP
-        self.H[(1, 3)] = QQCP
-        self.H[(3, 1)] = QQCP
-        self.H[(2, 2)] = 1.5 * QQCP
+        self.H[(1, 3)] = 0.25 * QQCP
+        self.H[(3, 1)] = 0.25 * QQCP
+        self.H[(2, 2)] = 0.25 * QQCP
 
         print("number of vibrational mode {:}".format(self.N))
         print("##### Hamiltonian parameters ######")
@@ -241,10 +241,19 @@ class vibronic_model_hamiltonian(object):
 
             # linear
             R += np.einsum('k,k->', H[(0, 1)], T[(1, 0)])
+            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[(2, 0)])
 
             # quadratic
-            R += 0.5 * np.einsum('kl,kl->', H[(0, 2)], T[(2, 0)])
-            R += 0.5 * np.einsum('kl,k,l->', H[(0, 2)], T[(1, 0)], T[(1, 0)])
+            R += 0.25 * np.einsum('kl,k,l->', H[(0, 2)], T[(1, 0)], T[(1, 0)])
+            R += 1. / 6. * np.einsum('klm,k,lm->', H[(0, 3)], T[(1, 0)], T[(2, 0)])
+            R += 1. / 48. * np.einsum('klmn,kl,mn->', H[(0, 4)], T[(2, 0)], T[(2, 0)])
+
+            # cubic
+            R += 1. / 36. * np.einsum('klm,k,l,m->', H[(0, 3)], T[(1, 0)], T[(1, 0)], T[(1, 0)])
+            R += 1. / 48. * np.eisnum('klmn,k,l,mn->', H[(0, 4)], T[(1, 0)], T[(1, 0)], T[(2, 0)]])
+
+            # quadruple
+            R += 1. / 2304. * np.einsum('klmn,k,l,m,n->', H[(0, 4)], T[(1, 0)], T[(1, 0)], T[(1, 0)], T[(1, 0)])
 
             # terms associated with thermal
 
@@ -252,9 +261,34 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('kl,lk->', H[(1, 1)], T[(1, 1)])
             R += np.einsum('k,k->', H[(1, 0)], T[(0, 1)])
             R += 0.5 * np.einsum('kl,kl->', H[(2, 0)], T[(0, 2)])
+
             # quadratic
             R += np.einsum('kl,k,l->', H[(1, 1)], T[(0, 1)], T[(1, 0)])
             R += 0.5 * np.einsum('kl,k,l->', H[(2, 0)], T[(0, 1)], T[(0, 1)])
+            R += 0.5 * np.einsum('klm,k,lm->', H[(1, 2)], T[(0, 1)], T[(2, 0)])
+            R += 0.5 * np.einsum('klm,l,mk->', H[(1, 2)], T[(1, 0)], T[(1, 1)])
+            R += 1. / 6. * np.einsum('klmn,lk,mn->', H[(1, 3)], T[(1, 1)], T[(2, 0)])
+            R += 0.25 * np.einsum('kl,k,l->', H[(2, 0)], T[(0, 1)], T[(0, 1)])
+            R += 0.5 * np.einsum('klm,k,ml->', H[(2, 1)], T[(1, 0)], T[(1, 1)])
+            R += 0.5 * np.einsum('klm,kl,m->', H[(2, 1)], T[(0, 2)], T[(1, 0)])
+            R += 0.125 * np.einsum('klmn,mk,nl->', H[(2, 2)], T[(1, 1)], T[(1, 1)])
+            R += 0.25 * np.einsum('klmn,nm,kl->', H[(2, 2)], T[(0, 2)], T[(2, 0)])
+            R += 1. / 6. * np.einsum('klm,k,lm->',H[(3, 0)], T[(0, 2)], T[(0, 1)])
+            R += 1. / 6. * np.einsum('klmn,kl,nm->', H[(3, 1)], T[(0, 2)], T[(1, 1)])
+            R += 1. / 48. * np.einsum('klmn,kl,mn->', H[(4, 0)], T[(0, 2)], T[(0, 2)])
+
+            # cubic
+            R += 0.25 * np.einsum('klm,k,l,m->', H[(1, 2)], T[(0, 1)], T[(1, 0)], T[(1, 0)])
+            R += 1./ 12. * np.einsum('klmn,l,m,nk->', H[(1, 3)], T[(1, 0)], T[(1, 0)], T[(1, 1)])
+            R += 1. / 6. * np.einsum('klmn,k,l,mn->', H[(1, 3)], T[(0, 1)], T[(1, 0)], T[(2, 0)])
+            R += 0.25 * np.einsum('klm,k,l,m->', H[(2, 1)], T[(0, 1)], T[(0, 1)],T[(1, 0)])
+            R += 0.125 * np.einsum('klmn,kl,m,n', H[(2, 2)], T[(0, 2)], T[(1, 0)], T[(1, 0)])
+            R += 0.125 * np.einsum('klmn,k,l,mn', H[(2, 2)], T[(0, 1)], T[(0, 1)], T[(2, 0)])
+            R += 0.25 * np.einsum('klmn,kl,m,n', H[(2, 2)], T[(0, 1)], T[(1, 0)], T[(1, 1)])
+            R += 1. / 36. * np.einsum('klm,k,l,m->', H[(3, 0)], T[(0, 1)], T[(0, 1)], T[(0, 1)])
+            R += 1. /12. * np.einsum('klmn,k,l,nm->', H[(4, 1)], T[(0, 1)], T[(0, 1)], T[(1, 1)])
+            R += 1. / 6. * np.einsum('klmn,k,lm,n->', H[(3, 1)], T[(0, 1)], T[(0, 2)], T[(1, 0)])
+            R += 1. / 12. * np.einsum('klmn,k,l,mn->', H[(4, 0)], T[(0, 1)], T[(0, 1)], T[(0, 2)])
 
             return R
 
