@@ -605,8 +605,8 @@ def read_model_op_file(
         maximal_dict[VMK.G4] = quartic
 
     # if the arrays only have zeros then we might not need to store them?
-    return_dict = dict((k, v) for k, v in maximal_dict.items() if not np.all(v == 0))
-
+    # return_dict = dict((k, v) for k, v in maximal_dict.items() if not np.all(v == 0))
+    return_dict = maximal_dict
     return return_dict
 
 

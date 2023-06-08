@@ -56,17 +56,19 @@ def main():
     """main function that run TNOE simulation"""
     # Read in Hamiltonian model parameters
     # define number of vibrational model
-    name = "h2o"
+    name = "CoF4"
 
-    model = read_in_model(inputdir, name, order=1)
+    model = read_in_model(inputdir, name, order=2)
 
     print("number of surfaces:{:}".format(model[VMK.A]))
     print("number of modes:{:}".format(model[VMK.N]))
     print("verticle energy (in eV):\n{:}".format(model[VMK.E]))
     print("Frequencies (in eV):\n{:}".format(model[VMK.w]))
     print("Linear coupling constants (in eV):\n{:}".format(model[VMK.G1]))
+    print("Quadratic coupling constants (in eV):\n{:}".format(model[VMK.G2]))
 
 
+    os._exit(0)
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False)
      # Bogoliubov transform the Hamiltonian

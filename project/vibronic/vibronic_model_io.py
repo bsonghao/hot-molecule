@@ -910,8 +910,10 @@ def extract_excited_state_model_op(
         FC=FC,
         **kwargs
     )
+    print(model.keys())
     # remove ground state from model and adjust parameter dimensions.
     new_model = model_remove_ground_state(model)
+    print(new_model.keys())
     return new_model
 
 
