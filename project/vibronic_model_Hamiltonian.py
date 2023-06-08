@@ -130,8 +130,7 @@ class vibronic_model_hamiltonian(object):
         linears = [(1, 0), (0, 1)]
         # quadratic term keys
         quadratics = [(2, 0), (1, 1), (0, 2)]
-
-
+        # loop over each block of the Hamiltonian
         for rank in self.H.keys():
             if rank in constants:
                 assert np.allclose(self.H[rank], np.transpose(self.H[rank]))
@@ -279,7 +278,7 @@ class vibronic_model_hamiltonian(object):
 
             # symmetrize t_2 amplitude
             t_2_new = np.zeros_like(t_2)
-            for x in range(N):
+            for x in range(A):
                 for i, j in it.product(range(2 * N), repeat=2):
                     t_2_new[x, i, j] = 0.5 * (t_2[x, i, j] + t_2[x, j, i])
 
@@ -597,16 +596,16 @@ class vibronic_model_hamiltonian(object):
             # calculate thermal internal energy
             E = np.trace(Z_residual[0]) / Z
             self.internal_energy.append(E)
-
-            log.info("step {:}:".format(i))
-            log.info("max z_0 amplitude:{:}".format(abs(Z_amplitude[0]).max()))
-            log.info("max z_1 amplitude:{:}".format(abs(Z_amplitude[1]).max()))
-            log.info("max z_2 amplitude:{:}".format(abs(Z_amplitude[2]).max()))
-            log.info("max t_1 ampltiude:{:}".format(abs(T_amplitude[1]).max()))
-            log.info("max t_2 amplitude:{:}".format(abs(T_amplitude[2]).max()))
-            log.info("Temperature: {:} K".format(self.temperature_grid[i]))
-            log.info("thermal internal energy: {:} cm-1".format(E))
-            log.info("partition function: {:}".format(Z))
+            if i / N_step * 100 % 1 == 0:
+                log.info("step {:}:".format(i))
+                log.info("Temperature: {:} K".format(self.temperature_grid[i]))
+                log.info("max z_0 amplitude:{:}".format(abs(Z_amplitude[0]).max()))
+                log.info("max z_1 amplitude:{:}".format(abs(Z_amplitude[1]).max()))
+                log.info("max z_2 amplitude:{:}".format(abs(Z_amplitude[2]).max()))
+                log.info("max t_1 ampltiude:{:}".format(abs(T_amplitude[1]).max()))
+                log.info("max t_2 amplitude:{:}".format(abs(T_amplitude[2]).max()))
+                log.info("thermal internal energy: {:} ev".format(E))
+                log.info("partition function: {:}".format(Z))
 
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
