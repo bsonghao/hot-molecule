@@ -67,10 +67,11 @@ def main():
     print("Linear coupling constants (in eV):\n{:}".format(model[VMK.G1]))
     print("Quadratic coupling constants (in eV):\n{:}".format(model[VMK.G2]))
 
+    assert np.allclose(model[VMK.G2], np.transpose(model[VMK.G2], (1, 0, 3, 2)))
 
-    os._exit(0)
     # initialize the Hamiltonian
-    model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False)
+    model = vibronic_model_hamiltonian(model, name, truncation_order=2, FC=False)
+    os._exit(0)
      # Bogoliubov transform the Hamiltonian
     model.thermal_field_transform(T_ref=1e4)
     model.reduce_H_tilde()

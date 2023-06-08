@@ -454,23 +454,25 @@ def double_quadratic_terms(number_of_modes, States, quadratic_terms):
     else:
         quadratic_terms[:] *= 2.0
 
+def mode_symmetrize_quadratic_terms(number_of_modes, Modes, States, quadratic_terms):
+    """
+    If the quadratic terms are zero in the upper triangle then we copy the
+    lower triangle to the upper triangle and multiply the diagonal terms by 2.
+    """
 
-def mode_symmetrize_quadratic_terms(number_of_modes, States, quadratic_terms):
-    """If the quadratic terms are zero in the upper triangle then we copy the lower triangle to the upper triangle and multiply the diagonal terms by 2."""
+    # note that this overcounts the diagonal by a factor of 2
+    for i, j in it.product(Modes, Modes):
+        quadratic_terms[i, j, ...] += quadratic_terms[j, i, ...]
 
-    upper_triangle_idx = np.triu_indices(number_of_modes, k=1)
-    lower_triangle_idx = np.tril_indices(number_of_modes, k=-1)
-    diagonal_idx = np.diag_indices(number_of_modes)
+    # so now we correct for that factor of 2
+    # for i in Modes:
+    #     quadratic_terms[i, i, ...] /= 2.0
+    lower_triangle_idx = np.tril_indices(number_of_modes, k=0)
 
     for a, b in it.product(States, States):
-        if not np.all(quadratic_terms[(*upper_triangle_idx, a, b)] == 0.0):
-            raise Exception(
-                f"The upper triangle at a({a}), b({b}) is not all zeros, "
-                "therefore we cannot symmetrize along the modes\n"
-            )
-    else:
-        for a, b in it.product(States, States):
-            quadratic_terms[(*upper_triangle_idx, a, b)] = quadratic_terms[(*lower_triangle_idx, a, b)]
+        quadratic_terms[(*lower_triangle_idx, a, b)] /= 2.0
+
+    return  # temporary fix
 
 
 def read_model_op_file(
@@ -582,7 +584,7 @@ def read_model_op_file(
         if double_quadratic:
             double_quadratic_terms(N, States, quadratic)
         elif symmetrize_quadratic:
-            mode_symmetrize_quadratic_terms(N, States, quadratic)
+            mode_symmetrize_quadratic_terms(N, Modes, States, quadratic)
         else:
             log.warning("We didn't change the quadratic terms in any way, make sure this was intentional!!!")
 

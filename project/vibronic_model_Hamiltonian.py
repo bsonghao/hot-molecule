@@ -83,8 +83,6 @@ class vibronic_model_hamiltonian(object):
         for a in range(A):
             self.H[(0, 0)][a, a] += 0.5 * np.sum(self.model[VMK.w])
 
-        log.info("zero point energy: {:.8f} ev".format(0.5 * np.sum(self.model[VMK.w])))
-
         # frequencies
         for a, j in it.product(range(A), range(N)):
             self.H[(1, 1)][a, a, j, j] += self.model[VMK.w][j]
@@ -97,12 +95,12 @@ class vibronic_model_hamiltonian(object):
         # quadratic terms
         if self.truncation_order >= 2:
             ## quadratic correction to H.O. ground state energy
-            self.H[(0, 0)] += 0.5 * np.trace(self.model[VMK.G2], axis1=2, axis2=3)
+            self.H[(0, 0)] += 0.25 * np.trace(self.model[VMK.G2], axis1=2, axis2=3)
 
             # quadratic terms
             self.H[(1, 1)] += self.model[VMK.G2]
-            self.H[(2, 0)] += 0.5 * self.model[VMK.G2]
-            self.H[(0, 2)] += 0.5 * self.model[VMK.G2]
+            self.H[(2, 0)] += self.model[VMK.G2]
+            self.H[(0, 2)] += self.model[VMK.G2]
 
         # if computing Frank-Condon(FC) model then
         # zero out all electronically-diagonal terms
@@ -125,6 +123,22 @@ class vibronic_model_hamiltonian(object):
             else:
                 log.info(self.H[rank])
 
+        # check hermicity of the Hamiltonian
+        # constant term keys
+        constants = [(0, 0)]
+        # linear term keys
+        linears = [(1, 0), (0, 1)]
+        # quadratic term keys
+        quadratics = [(2, 0), (1, 1), (0, 2)]
+
+
+        for rank in self.H.keys():
+            if rank in constants:
+                assert np.allclose(self.H[rank], np.transpose(self.H[rank]))
+            elif rank in linears:
+                assert np.allclose(self.H[rank], np.transpose(self.H[rank], (1, 0, 2)))
+            elif rank in quadratics:
+                assert np.allclose(self.H[rank], np.transpose(self.H[rank], (1, 0, 3, 2)))
 
         log.info("Boltzmann constant: {:} eV K-1".format(self.Kb))
 
