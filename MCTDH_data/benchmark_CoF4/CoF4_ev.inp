@@ -12,29 +12,29 @@ opname = CoF4_quadratic
 end-operator-section
 
 SPF-BASIS-SECTION
-packet=10, single-set
-      v01      =  35
-      v02      =  35
-      v03      =  35
-      v04      =  35
-      v05      =  35
-      v06      =  35
-      v07      =  35
-      v08      =  35
-      v09      =  35
+packet=5, single-set
+      v01      =  2
+      v02      =  2
+      v03      =  2
+      v04      =  2
+      v05      =  2
+      v06      =  2
+      v07      =  2
+      v08      =  2
+      v09      =  2
 
 end-spf-basis-section
 
 PRIMITIVE-BASIS-SECTION
-    v01    HO     35   0.0   1.0   1.0
-    v02    HO     35   0.0   1.0   1.0
-    v03    HO     35   0.0   1.0   1.0
-    v04    HO     35   0.0   1.0   1.0
-    v05    HO     35   0.0   1.0   1.0
-    v06    HO     35   0.0   1.0   1.0
-    v07    HO     35   0.0   1.0   1.0
-    v08    HO     35   0.0   1.0   1.0
-    v09    HO     35   0.0   1.0   1.0
+    v01    HO     5   0.0   1.0   1.0
+    v02    HO     5   0.0   1.0   1.0
+    v03    HO     5   0.0   1.0   1.0
+    v04    HO     5   0.0   1.0   1.0
+    v05    HO     5   0.0   1.0   1.0
+    v06    HO     5   0.0   1.0   1.0
+    v07    HO     5   0.0   1.0   1.0
+    v08    HO     5   0.0   1.0   1.0
+    v09    HO     5   0.0   1.0   1.0
     el     el     2
 
 end-primitive-basis-section
