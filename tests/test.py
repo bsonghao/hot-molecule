@@ -72,10 +72,10 @@ def main():
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(model, name, truncation_order=2, FC=False)
     # Bogoliubov transform the Hamiltonian
-    model.thermal_field_transform(T_ref=1e4)
+    model.thermal_field_transform(T_ref=2e3)
     model.reduce_H_tilde()
     # run TFCC simulation
-    model.TFCC_integration(T_initial=2e3, T_final=7e2, N_step=10000, output_path=outputdir)
+    model.TFCC_integration(T_initial=1e3, T_final=1e1, N_step=10000, output_path=outputdir)
 
     return
 

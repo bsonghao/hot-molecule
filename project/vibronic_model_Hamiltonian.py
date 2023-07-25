@@ -596,7 +596,7 @@ class vibronic_model_hamiltonian(object):
             # calculate thermal internal energy
             E = np.trace(Z_residual[0]) / Z
             self.internal_energy.append(E)
-            if i / N_step * 100 % 1 == 0:
+            if (i+1) / N_step * 100 % 1 == 0:
                 log.info("step {:}:".format(i))
                 log.info("Temperature: {:} K".format(self.temperature_grid[i]))
                 log.info("max z_0 amplitude:{:}".format(abs(Z_amplitude[0]).max()))

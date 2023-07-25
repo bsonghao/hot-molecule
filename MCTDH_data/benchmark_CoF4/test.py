@@ -3,7 +3,7 @@ import numpy as np
 
 
 def main():
-    file_name = "rlx_info"
+    file_name = "rlx_info_2spf_5pk"
     data = read_energy(file_name)
     data.read_data(name="CoF4")
     data.process_data(name="CoF4", T_grid=np.linspace(10, 1000, 20000))
