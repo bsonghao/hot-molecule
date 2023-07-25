@@ -75,7 +75,8 @@ def main():
     model.thermal_field_transform(T_ref=2e3)
     model.reduce_H_tilde()
     # run TFCC simulation
-    model.TFCC_integration(T_initial=1e3, T_final=1e1, N_step=10000, output_path=outputdir)
+    # model.TFCC_integration(T_initial=1e3, T_final=1e1, N_step=10000, output_path=outputdir) #(primary 1st order Euler method)
+    model.rk45_integration(T_initial=1e3, T_final=1e1, nof_points=10000, output_path=outputdir) # RK integrator with adapative steps)
 
     return
 

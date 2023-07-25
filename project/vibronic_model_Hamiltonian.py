@@ -28,6 +28,7 @@ import opt_einsum as oe
 # local import
 from project.vibronic import vIO, VMK
 from project.log_conf import log
+from project.temporary_trial_solver import new_solve_ivp # import the RK integrator
 
 
 
@@ -546,6 +547,9 @@ class vibronic_model_hamiltonian(object):
         T_initial: initial temperature of the integration
         T_final: final temperature of the integration
         N_step: number of the numerical steps
+
+        This is a primary implementation with first order Euler
+        method with fixed numerical integration step
         """
         A, N = self.A, self.N
         # map initial T amplitude
@@ -611,5 +615,305 @@ class vibronic_model_hamiltonian(object):
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"{:}_thermal_data_TFCC.csv".format(self.name), index=False)
+
+        return
+
+    def _unravel_y_tensor(self, y_tensor):
+        """ Restore the original shape of the flattened y tensor """
+
+        A, N = self.A, self.N  # for brevity
+
+        # all return tensors start as None
+        Z = {0: None, 1: None, 2: None}
+        T = {1: None, 2: None}
+
+        # ------------------------------ restore z tensor ----------------------------
+
+        # constant terms
+        start_constant_slice_index = 0
+        end_constant_slice_index = start_constant_slice_index + A * A
+        Z[0] = np.reshape(
+            y_tensor[start_constant_slice_index:end_constant_slice_index],
+            newshape=(A, A)
+        )
+
+        # linear terms
+        start_linear_slice_index = end_constant_slice_index
+        end_linear_slice_index = start_linear_slice_index + A * A * 2 * N
+        Z[1] = np.reshape(
+            y_tensor[start_linear_slice_index: end_linear_slice_index],
+            newshape=(A, A, 2 * N)
+        )
+        # quadratic terms
+        start_quadratic_slice_index = end_linear_slice_index
+        end_quadratic_slice_index = start_quadratic_slice_index + A * A * 2 * N * 2 *  N
+        Z[2] = np.reshape(
+            y_tensor[start_quadratic_slice_index: end_quadratic_slice_index],
+            newshape=(A, A, 2 * N, 2 * N)
+        )
+
+        # ------------------------------ restore t tensor ----------------------------
+
+        # need a bit of logic to figure out the final Z slice index
+
+        start_linear_slice_index = end_quadratic_slice_index
+
+        end_linear_slice_index = start_linear_slice_index + A * 2 * N
+        T[1] = np.reshape(
+            y_tensor[start_linear_slice_index: end_linear_slice_index],
+            newshape=(A, 2 * N)
+        )
+
+        # quadratic terms
+
+
+
+        start_quadratic_slice_index = end_linear_slice_index
+
+
+
+        end_quadratic_slice_index = start_quadratic_slice_index + A * 2 * N * 2 * N
+
+
+
+        T[2] = np.reshape(
+
+
+
+            y_tensor[start_quadratic_slice_index: end_quadratic_slice_index],
+
+
+
+            newshape=(A, 2 * N, 2 * N)
+
+
+
+            )
+
+        return Z, T
+
+    def _ravel_y_tensor(self, Z, T):
+        """ Flatten the `t` and `z` tensors into a 1D array """
+        # ravel z tensor
+        z_tensor_list = [Z[0].ravel(), ]
+        z_tensor_list.append(Z[1].ravel())
+        z_tensor_list.append(Z[2].ravel())
+
+        # ravel t tensor
+        t_tensor_list = []
+        t_tensor_list.append(T[1].ravel())
+        t_tensor_list.append(T[2].ravel())
+
+        # the t tensor should come before the z tensor
+        y_tensor = np.concatenate((*z_tensor_list, *t_tensor_list))
+
+        return y_tensor
+
+    def _print_integration_progress(self, time, t_final, *args):
+        """ Prints to stdout every 1e4 steps or if current fs value is a multiple of (0.1 * `t_final`). """
+
+        # unpack any args we wish to print
+        Z, T = args
+
+        self.counter += 1
+        self.last_counter += 1
+
+        time_is_a_multiple_of_ten_percent_of_t_final = np.isclose(round(time, 1) % (t_final / 10), 0.1)
+
+        print_flag = bool(
+            self.last_counter >= int(1e4)
+            or time_is_a_multiple_of_ten_percent_of_t_final
+        )
+
+        if print_flag:
+            log.info(
+                f"On integration step {self.counter:<8d} at {1./(self.Kb * time):>9.4f}K\n"
+                f"Z = {self.partition_function[-1][1]:>9.4f}\n"
+                f"E = {self.internal_energy[-1][1]:>9.4f}\n"
+            )
+
+            # -------------------------------------------------------------------------------------
+            # print T amplitudes
+            t_amplitude_values_string = f'max single   T[1]  amplitude: {abs(T[1]).max()}\n'
+            t_amplitude_values_string += f'max double   T[2]  amplitude: {abs(T[2]).max()}\n'
+            log.info(t_amplitude_values_string)
+            # -------------------------------------------------------------------------------------
+            # print Z amplitudes
+            z_amplitude_values_string = f'max constant Z[0]   amplitude: {abs(Z[0]).max()}\n'
+            z_amplitude_values_string += f'max single   z[1]   amplitude: {abs(Z[1]).max()}\n'
+            z_amplitude_values_string += f'max double   z[2]  amplitude: {abs(Z[2]).max()}\n'
+            log.info(z_amplitude_values_string)
+
+
+            self.last_print = time
+            self.last_counter = 0
+
+        return
+
+
+    def rk45_solve_ivp_integration_function(self, time, y_tensor, t_final):
+        """ Integration function used by `solve_ivp` integrator inside `rk45_integration` method.
+
+        `time` is a float, the value of time for the current integration step
+        `y_tensor` is an (n, k) dimensional tensor where the n dimension counts the ode's
+        that we are attempting to solve and k can represent multiple time steps to block integrate over
+        at the moment we do not do any block integration so k is 1
+        """
+        A, N = self.A, self.N
+
+        # restore the origin shape of t, z amplitudes from y_tensor
+        Z_amplitude, T_amplitude = self._unravel_y_tensor(y_tensor)
+
+        # printing progression
+        self._print_integration_progress(time, t_final, Z_amplitude, T_amplitude)
+
+        T_residual, Z_residual = {}, {}
+        for block in T_amplitude.keys():
+            T_residual[block] = np.zeros_like(T_amplitude[block])
+        for block in Z_amplitude.keys():
+            Z_residual[block] = np.zeros_like(Z_amplitude[block])
+
+        for x in range(A):
+            t_amplitude, z_amplitude = {}, {}
+            for block in T_amplitude.keys():
+                t_amplitude[block] = T_amplitude[block][x, :]
+            for block in Z_amplitude.keys():
+                z_amplitude[block] = Z_amplitude[block][x, :]
+            t_residual, z_residual = self.cal_T_Z_residual(t_amplitude, z_amplitude)
+            for block in t_residual.keys():
+                T_residual[block][x, :] += t_residual[block]
+            for block in z_residual.keys():
+                Z_residual[block][x, :] += z_residual[block]
+
+        # calculate partition function
+        Z = np.trace(Z_amplitude[0])
+        # calculate thermal internal energy
+        E = np.trace(Z_residual[0]) / Z
+
+        # flatten the z, t tensors into a 1D array
+        delta_y_tensor = self._ravel_y_tensor(Z_residual, T_residual)
+
+        # store thermal properties data
+        self.partition_function.append((time, Z))
+        self.internal_energy.append((time, E))
+
+        return -delta_y_tensor
+
+    def _postprocess_rk45_integration_results(self, sol, output_path, debug=False):
+        """ extract the relevant information from the integrator object `sol` """
+        # number of integration steps accepted by the integrator
+
+        log.info(f"RK45 preformed {len(self.partition_function)} integration calculations.")
+        log.info(f"RK45 accepted  {len(sol.t)} of those as solutions to the ode's.")
+        if debug:
+            log.debug(f"Distance we reached when we stopped: {sol.t_events[0]}")
+
+        # Copy the time value arrays
+        self.t_cc = sol.t.copy()
+
+        # initialize the arrays to store the thermal properties
+        self.partition_function_cc = np.zeros_like(self.t_cc)
+        self.internal_energy_cc = np.zeros_like(self.t_cc)
+
+        # log.info(len(self.C_tau_cc))
+        # log.info(len(self.C_tau_cc_store))
+
+        # only extract the values which correspond to time steps in the solution
+        C_dic_partition_function = {c[0]: c[1] for c in self.partition_function}
+        for idx, t in enumerate(sol.t):
+            self.partition_function_cc[idx] = C_dic_partition_function[t]
+
+        C_dic_internal_energy = {c[0]: c[1] for c in self.internal_energy}
+        for idx, t in enumerate(sol.t):
+            self.internal_energy_cc[idx] = C_dic_internal_energy[t]
+
+        log.debug(f"Status message: {sol.message}")  # description of termination reason
+        log.debug(f"status: {sol.status}")  # -1: step failed, 0: reached end of tspan, 1: termination event occurred
+        log.debug(f"Succeeded?: {sol.success}")  # bool if reached end of interval or termination event occurred
+
+        # store data
+        thermal_data = {"temperature": 1. / (self.Kb * sol.t), "internal energy": self.internal_energy_cc, "partition function": self.partition_function_cc}
+        df = pd.DataFrame(thermal_data)
+        df.to_csv(output_path+"{:}_thermal_data_TFCC.csv".format(self.name), index=False)
+
+        return
+
+
+    def rk45_integration(self, output_path, T_initial=0., T_final=10., density=1.0, nof_points=10000, debug_flag=False):
+        """ Runge-Kutta imaginary time integration
+
+        This is an advanced integration method with the RK numerical integration
+        method with adapative numerical integration steps
+        """
+
+        # ------------------------------------------------------------------------
+        # initialize integration parameters
+        # ------------------------------------------------------------------------
+        log.info(f"We are going to preform a RK4(5) integration")
+
+        A, N = self.A, self.N  # to reduce line lengths, for conciseness
+
+        # map initial T amplitude from classical limit at hight temperature
+        initial_T, initial_Z = self._map_initial_amplitude(T_initial=T_initial)
+
+        # used for debugging purposes to print out the integration steps every n% of integration
+        self.counter = 0
+        self.last_counter = 0
+        self.last_print = 0
+
+        # calculation initial step size for the numerical integration
+        beta_init = 1. / (self.Kb * T_initial)
+        beta_final = 1. / (self.Kb * T_final)
+        step_size = (beta_final - beta_init) / nof_points
+
+
+        # initialize thermal propeties as empty lists
+        self.partition_function = []
+        self.internal_energy = []
+
+
+        # prepare the initial y_tensor
+        initial_y_tensor = self._ravel_y_tensor(initial_Z, initial_T)
+
+        # ------------------------------------------------------------------------
+        # the integration function called by the `solve_ivp` integrator at each step of integration
+        # ------------------------------------------------------------------------
+
+
+        # set up tolerance for the RK integrator
+        relative_tolerance = 1e-015
+        absolute_tolerance = 1e-016
+        # ------------------------------------------------------------------------
+        # call the integrator
+        # ------------------------------------------------------------------------
+
+        integration_function = self.rk45_solve_ivp_integration_function
+
+        sol = new_solve_ivp(
+            fun=integration_function,  # the function we are integrating
+            method="RK45",  # the integration method we are using
+            first_step=step_size,  # fix the initial step size
+            t_span=(
+                beta_init,  # initial time
+                beta_final,  # boundary time, integration end point
+            ),
+            y0=initial_y_tensor,  # initial state - shape (n, )
+            args=(beta_final, ),  # extra args to pass to `rk45_solve_ivp_integration_function`
+            # max_step=self.step_size,  # maximum allowed step size
+            rtol=relative_tolerance,  # relative tolerance
+            atol=absolute_tolerance,  # absolute tolerance
+            store_y_values=False,  # do not store the y values over the integration
+            t_eval=None,  # store all the time values that we integrated over
+            dense_output=False,  # extra debug information
+            # we do not need to vectorize
+            # this means to process multiple time steps inside the function `rk45_solve_ivp_integration_function`
+            # it would be useful for a method which does some kind of block stepping
+            vectorized=False,
+        )
+
+        # ------------------------------------------------------------------------
+        # now we extract the relevant information from the integrator object `sol`
+        # ------------------------------------------------------------------------
+        self._postprocess_rk45_integration_results(sol, output_path, debug=debug_flag)
 
         return
