@@ -735,19 +735,21 @@ class vibronic_model_hamiltonian(object):
         if print_flag:
             log.info(
                 f"On integration step {self.counter:<8d} at {1./(self.Kb * time):>9.4f}K\n"
-                f"{percent:>9.2f} % integration is completed\n"
+                f"{percent:>9.3f} % integration is completed\n"
                 f"Z = {self.partition_function[-1][1]:>9.4f}\n"
                 f"E = {self.internal_energy[-1][1]:>9.4f}\n"
             )
 
             # -------------------------------------------------------------------------------------
             # print T amplitudes
-            t_amplitude_values_string = f'max single   T[1]  amplitude: {abs(T[1]).max()}\n'
+            t_amplitude_values_string = f'\n'
+            t_amplitude_values_string += f'max single   T[1]  amplitude: {abs(T[1]).max()}\n'
             t_amplitude_values_string += f'max double   T[2]  amplitude: {abs(T[2]).max()}\n'
             log.info(t_amplitude_values_string)
             # -------------------------------------------------------------------------------------
             # print Z amplitudes
-            z_amplitude_values_string = f'max constant Z[0]   amplitude: {abs(Z[0]).max()}\n'
+            z_amplitude_values_string = f'\n'
+            z_amplitude_values_string += f'max constant Z[0]   amplitude: {abs(Z[0]).max()}\n'
             z_amplitude_values_string += f'max single   z[1]   amplitude: {abs(Z[1]).max()}\n'
             z_amplitude_values_string += f'max double   z[2]  amplitude: {abs(Z[2]).max()}\n'
             log.info(z_amplitude_values_string)
