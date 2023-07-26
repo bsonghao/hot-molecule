@@ -709,7 +709,7 @@ class vibronic_model_hamiltonian(object):
 
         return y_tensor
 
-    def _print_integration_progress(self, time, t_final, *args):
+    def _print_integration_progress(self, time, t_init, t_final, *args):
         """ Prints to stdout every 1e4 steps or if current fs value is a multiple of (0.1 * `t_final`). """
 
         # unpack any args we wish to print
@@ -718,16 +718,24 @@ class vibronic_model_hamiltonian(object):
         self.counter += 1
         self.last_counter += 1
 
-        time_is_a_multiple_of_ten_percent_of_t_final = np.isclose(round(time, 1) % (t_final / 10), 0.1)
+        delta_time = time - t_init
+        delta_t_final = t_final - t_init
+        percent = delta_time / delta_t_final * 100
+
+        time_is_a_multiple_of_ten_percent_of_t_final = np.isclose((round(percent, 1) % 10), 0)
+
+        percent_is_not_zero = (percent != 0)
 
         print_flag = bool(
             self.last_counter >= int(1e4)
-            or time_is_a_multiple_of_ten_percent_of_t_final
+            or (time_is_a_multiple_of_ten_percent_of_t_final
+            and percent_is_not_zero)
         )
 
         if print_flag:
             log.info(
                 f"On integration step {self.counter:<8d} at {1./(self.Kb * time):>9.4f}K\n"
+                f"{percent:>9.2f} % integration is completed\n"
                 f"Z = {self.partition_function[-1][1]:>9.4f}\n"
                 f"E = {self.internal_energy[-1][1]:>9.4f}\n"
             )
@@ -751,7 +759,7 @@ class vibronic_model_hamiltonian(object):
         return
 
 
-    def rk45_solve_ivp_integration_function(self, time, y_tensor, t_final):
+    def rk45_solve_ivp_integration_function(self, time, y_tensor, t_init, t_final):
         """ Integration function used by `solve_ivp` integrator inside `rk45_integration` method.
 
         `time` is a float, the value of time for the current integration step
@@ -765,7 +773,7 @@ class vibronic_model_hamiltonian(object):
         Z_amplitude, T_amplitude = self._unravel_y_tensor(y_tensor)
 
         # printing progression
-        self._print_integration_progress(time, t_final, Z_amplitude, T_amplitude)
+        self._print_integration_progress(time, t_init, t_final, Z_amplitude, T_amplitude)
 
         T_residual, Z_residual = {}, {}
         for block in T_amplitude.keys():
@@ -881,8 +889,8 @@ class vibronic_model_hamiltonian(object):
 
 
         # set up tolerance for the RK integrator
-        relative_tolerance = 1e-015
-        absolute_tolerance = 1e-016
+        relative_tolerance = 1e-012
+        absolute_tolerance = 1e-014
         # ------------------------------------------------------------------------
         # call the integrator
         # ------------------------------------------------------------------------
@@ -898,7 +906,7 @@ class vibronic_model_hamiltonian(object):
                 beta_final,  # boundary time, integration end point
             ),
             y0=initial_y_tensor,  # initial state - shape (n, )
-            args=(beta_final, ),  # extra args to pass to `rk45_solve_ivp_integration_function`
+            args=(beta_init, beta_final, ),  # extra args to pass to `rk45_solve_ivp_integration_function`
             # max_step=self.step_size,  # maximum allowed step size
             rtol=relative_tolerance,  # relative tolerance
             atol=absolute_tolerance,  # absolute tolerance
