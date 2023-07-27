@@ -50,7 +50,21 @@ def read_in_model(dir, model_name, order):
     return model
 
 
+def process_data(filename):
+    """ temporary formatted printing of profiling data """
+    try:
+        s = io.StringIO()
+        p = pstats.Stats(filename, stream = s)
+        # p.strip_dirs().sort_stats("tottime").print_stats(2)
+        p.strip_dirs().sort_stats("tottime").print_stats(10)
+        p.strip_dirs().sort_stats("cumulative").print_stats(20)
+        p.strip_dirs().sort_stats("cumulative").print_stats('contract', 100)
+       # p.strip_dirs().sort_stats("cumulative").print_callees('contract_expression')
 
+        with open(outputdir+filename+".txt", "w+") as f:
+            f.write(s.getvalue())
+    except Exception:
+        print("cProfile data is not stored properly!")
 
 def main():
     """main function that run TNOE simulation"""
@@ -76,8 +90,21 @@ def main():
     model.reduce_H_tilde()
     # run TFCC simulation
     # model.TFCC_integration(T_initial=1e3, T_final=1e1, N_step=10000, output_path=outputdir) #(primary 1st order Euler method)
-    model.rk45_integration(T_initial=1e3, T_final=1e1, nof_points=10000, output_path=outputdir) # RK integrator with adapative steps)
+    func_string = 'model.rk45_integration(T_initial=1e3, T_final=1e1, nof_points=10000, output_path=outputdir)'
+    if True:
+        # conduct profiling of the main simulation code
+        filename = name + "_cProfile_data"
+        cProfile.runctx(
+                    func_string,
+                     globals(),
+                     locals(),
+                     filename)
+        # store the profiling data
+        process_data(filename)
 
+    else:
+        eval(func_string)
+        # model.rk45_integration(T_initial=1e3, T_final=1e1, nof_points=10000, output_path=outputdir) # RK integrator with adapative steps)
     return
 
 
