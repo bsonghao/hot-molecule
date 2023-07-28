@@ -72,6 +72,8 @@ def main():
     # define number of vibrational model
     name = "CoF4"
 
+    integrator_flag = "RK"
+
     model = read_in_model(inputdir, name, order=2)
 
     print("number of surfaces:{:}".format(model[VMK.A]))
@@ -89,22 +91,24 @@ def main():
     model.thermal_field_transform(T_ref=2e3)
     model.reduce_H_tilde()
     # run TFCC simulation
-    # model.TFCC_integration(T_initial=1e3, T_final=1e1, N_step=10000, output_path=outputdir) #(primary 1st order Euler method)
-    func_string = 'model.rk45_integration(T_initial=1e3, T_final=1e1, nof_points=10000, output_path=outputdir)'
-    if True:
-        # conduct profiling of the main simulation code
-        filename = name + "_cProfile_data"
-        cProfile.runctx(
-                    func_string,
-                     globals(),
-                     locals(),
-                     filename)
-        # store the profiling data
-        process_data(filename)
-
+    if integrator_flag == "Euler":
+        model.TFCC_integration(T_initial=1e3, T_final=1e1, N_step=100000, output_path=outputdir) #(primary 1st order Euler method)
+    elif integrator_flag == "RK":
+        func_string = 'model.rk45_integration(T_initial=1e3, T_final=1e1, nof_points=10000, output_path=outputdir)'
+        if True:
+            # conduct profiling of the main simulation code
+            filename = name + "_cProfile_data"
+            cProfile.runctx(
+                        func_string,
+                         globals(),
+                         locals(),
+                         filename)
+            # store the profiling data
+            process_data(filename)
+        else:
+            eval(func_string)
     else:
-        eval(func_string)
-        # model.rk45_integration(T_initial=1e3, T_final=1e1, nof_points=10000, output_path=outputdir) # RK integrator with adapative steps)
+        pass
     return
 
 

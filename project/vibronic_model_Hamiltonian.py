@@ -614,7 +614,7 @@ class vibronic_model_hamiltonian(object):
         # store data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"{:}_thermal_data_TFCC.csv".format(self.name), index=False)
+        df.to_csv(output_path+"{:}_thermal_data_TFCC_Euler.csv".format(self.name), index=False)
 
         return
 
@@ -844,7 +844,7 @@ class vibronic_model_hamiltonian(object):
         # store data
         thermal_data = {"temperature": 1. / (self.Kb * sol.t), "internal energy": self.internal_energy_cc, "partition function": self.partition_function_cc}
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"{:}_thermal_data_TFCC.csv".format(self.name), index=False)
+        df.to_csv(output_path+"{:}_thermal_data_TFCC_RK.csv".format(self.name), index=False)
 
         return
 
