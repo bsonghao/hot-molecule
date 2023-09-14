@@ -16,8 +16,8 @@ sys.path.insert(0, project_dir)
 outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
-import Project
-from Project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
+import project
+from project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
 
 
 def main():
