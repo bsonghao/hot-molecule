@@ -125,6 +125,31 @@ class vibronic_model_hamiltonian(object):
             energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
+        def Cal_density_matrx(E, V, T, Z):
+            """ compute thermal denistry matrix"""
+            # initialize thermal denisity matrix
+            density_matrix = np.zeros([self.N, self.N])
+            # reshape eigen vector
+            eigvec = V.reshape((basis_size, basis_size, basis_size**self.N))
+            # construct density matrix element by element
+            for l, e in enumerate(E):
+                boltzmann_factor = np.exp(-e / (self.Kb * T))
+                for n_1, n_2 in it.product(range(basis_size), repeat=2):
+                        density_matrix[0, 0] += n_1 * eigvec[n_1, n_2, l] * eigvec[n_1, n_2, l] * boltzmann_factor
+                        density_matrix[1, 1] += n_2 * eigvec[n_1, n_2, l] * eigvec[n_1, n_2, l] * boltzmann_factor
+                for n_1, n_2 in it.product(range(basis_size-1), range(1, basis_size)):
+                        density_matrix[0, 1] += np.sqrt(n_1+1) * np.sqrt(n_2) * eigvec[n_1+1, n_2-1, l] * eigvec[n_1, n_2, l] * boltzmann_factor
+                for n_1, n_2 in it.product(range(1, basis_size), range(basis_size-1)):
+                        density_matrix[1, 0] += np.sqrt(n_1) * np.sqrt(n_2+1) * eigvec[n_1-1, n_2+1, l] * eigvec[n_1, n_2, l] * boltzmann_factor
+            # normalize the densitry matrix
+            density_matrix /= Z
+
+            return density_matrix
+
+
+
+
+
         beta_initial = 1. / (T_initial * self.Kb)
         beta_final = 1. / (T_final * self.Kb)
         T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, num_step))
@@ -153,6 +178,22 @@ class vibronic_model_hamiltonian(object):
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"thermal_data_FCI.csv", index=False)
 
+        DM_list = []
+        # calculate density matrix
+        for i, T in enumerate(T_grid):
+            DM = Cal_density_matrx(E, V, T, partition_function[i])
+            DM_list.append(DM)
+
+        # store density matrix data element by element
+        DM_data = {"temperature": T_grid}
+        for i, j in it.product(range(self.N), repeat=2):
+            key = (i, j)
+            DM_data[key] = []
+            for PDM in DM_list:
+                DM_data[key].append(PDM[i, j])
+
+        df = pd.DataFrame(DM_data)
+        df.to_csv(output_path+"denisty_matrix_data_FCI.csv", index=False)
         return
 
     def thermal_field_transformation(self, Temp):
@@ -435,6 +476,7 @@ class vibronic_model_hamiltonian(object):
         # (1, 1) block
         DM[(1, 1)] = np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, T_amplitude[2][N:, :N])
         DM[(1, 1)] += np.einsum('i,j,i,j->ij', self.sinh_theta, self.cosh_theta, T_amplitude[1][N:], T_amplitude[1][:N])
+        DM[(1, 1)] += np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, np.eye(N))
         # (2, 0) block
         DM[(2, 0)] = np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, T_amplitude[2][:N, :N])
         DM[(2, 0)] += np.einsum('i,j,i,j->ij', self.cosh_theta, self.cosh_theta, T_amplitude[1][:N], T_amplitude[1][:N])
@@ -461,14 +503,20 @@ class vibronic_model_hamiltonian(object):
         self.temperature_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, num_step))
         self.partition_function = []
         self.internal_energy = []
+        density_matrix_list = []
         # thermal field imaginary time propagation
         for i in range(num_step):
             Residual = self.CC_residue(self.H_tilde_reduce, T_amplitude)
+            # calculation physical density matrix
+            PDM = self.cal_physical_DM(T_amplitude)
+            # store physical density matrix in a list
+            density_matrix_list.append(PDM[(1, 1)])
 
             if compare_energy:
                 # calculation physical density matrix
                 PDM = self.cal_physical_DM(T_amplitude)
-
+                # store physical density matrix in a list
+                density_matrix_list.append(PDM[(1, 1)])
                 # calculation energy from pysical density matrix
                 E_DM = self.H[(0, 0)]
                 # add the constant shift in the thermal field
@@ -504,10 +552,21 @@ class vibronic_model_hamiltonian(object):
             print("thermal internal energy: {:} ev-1".format(E))
             print("partition function: {:}".format(Z))
 
-        # store data
+        # store thermal properties data
         thermal_data = {"temperature": self.temperature_grid, "internal energy": self.internal_energy, "partition function": self.partition_function}
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"thermal_data_TFCC.csv", index=False)
+        # store density matrix data
+        DM_data = {"temperature": self.temperature_grid}
+        # store DM matrix element by element
+        for i, j in it.product(range(self.N), repeat=2):
+            key = (i, j)
+            DM_data[key] = []
+            for PDM in density_matrix_list:
+                DM_data[key].append(PDM[i, j])
+
+        df = pd.DataFrame(DM_data)
+        df.to_csv(output_path+"denisty_matrix_data_TFCC.csv", index=False)
 
         return
 
