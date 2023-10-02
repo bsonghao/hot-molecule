@@ -4,8 +4,6 @@ Some explanation / notes should go here
 
 """
 
-
-# system imports
 # system imports
 import io
 import time
@@ -27,18 +25,22 @@ import parse  # used for loading data files
 import pandas as pd
 #
 import opt_einsum as oe
+import itertools as it
 
 # local imports
 # import the path to the package
 project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule/'))
 sys.path.insert(0, project_dir)
 from project.two_mode_model import model_two_mode
+from project.vibronic import vIO, VMK
+from project.log_conf import log
+
 
 
 class vibronic_model_hamiltonian(object):
     """ vibronic model hamiltonian class implement TF-VECC approach to simulation thermal properties of vibronic models. """
 
-    def __init__(self, freq, LCP, QCP, VE, TDM, num_mode, num_surface):
+    def __init__(self, model, name, truncation_order):
         """
         initialize hamiltonian parameters:
         freq: vibrational frequencies
@@ -51,13 +53,21 @@ class vibronic_model_hamiltonian(object):
         """
 
         # initialize the Hamiltonian parameters as object instances
-        self.A = num_surface
-        self.N = num_mode
-        self.Freq = freq
-        self.LCP = LCP
-        self.QCP = QCP
-        self.VE = VE
-        self.TDM = TDM
+        # number of potential energy surfaces
+        self.A = model[VMK.A]
+        # number of vibrational modes
+        self.N = model[VMK.N]
+        # transition dipole moments
+        self.TDM = self.E_tdm = model[VMK.etdm][0]
+        print("Transition dipole moment:\n{:}".format(self.TDM))
+        # name of the model
+        self.name = name
+
+        # Hamiltonian truncation order
+        self.truncation_order = truncation_order
+
+        # vibronic model
+        self.model = model
 
         # Boltzmann constant (eV K-1)
         self.Kb = 8.61733326e-5
@@ -69,19 +79,43 @@ class vibronic_model_hamiltonian(object):
 
         # define Hamiltonian obrect as a python dictionary where the keys are the rank of the Hamiltonian
         # and we represent the Hamitlnian in the form of second quantization
-        self.H = dict()
-        # constant
-        self.H[(0, 0)] = VE
-        # first order
-        self.H[(1, 0)] = LCP
-        self.H[(0, 1)] = LCP
-        # second order
-        self.H[(1, 1)] = 4 * QCP
-        for a in range(self.A):
-            self.H[(1, 1)][a, a, :] += 4 * np.diag(self.Freq)
+   # define coefficient tensors
+        A, N = self.A, self.N
 
-        self.H[(2, 0)] = 2 * QCP
-        self.H[(0, 2)] = 2 * QCP
+        self.H = {
+            (0, 0): np.zeros((A, A)),
+            (0, 1): np.zeros((A, A, N)),
+            (1, 0): np.zeros((A, A, N)),
+            (1, 1): np.zeros((A, A, N, N)),
+            (0, 2): np.zeros((A, A, N, N)),
+            (2, 0): np.zeros((A, A, N, N))
+        }
+        log.info("Zero point energy:{:}".format(0.5 * np.sum(self.model[VMK.w])))
+        # constant term
+        self.H[(0, 0)] += self.model[VMK.E].copy()
+        ## H.O. ground state energy
+        for a in range(A):
+            self.H[(0, 0)][a, a] += 0.5 * np.sum(self.model[VMK.w])
+
+        # frequencies
+        for a, j in it.product(range(A), range(N)):
+            self.H[(1, 1)][a, a, j, j] += self.model[VMK.w][j]
+
+        # linear terms
+        if self.truncation_order >= 1:
+            self.H[(0, 1)] += self.model[VMK.G1] / np.sqrt(2)
+            self.H[(1, 0)] += self.model[VMK.G1] / np.sqrt(2)
+
+        # quadratic terms
+        if self.truncation_order >= 2:
+            ## quadratic correction to H.O. ground state energy
+            self.H[(0, 0)] += 0.25 * np.trace(self.model[VMK.G2], axis1=2, axis2=3)
+
+            # quadratic terms
+            self.H[(1, 1)] += self.model[VMK.G2]
+            self.H[(2, 0)] += self.model[VMK.G2]
+            self.H[(0, 2)] += self.model[VMK.G2]
+
 
         print("number of vibrational mode {:}".format(self.N))
         print("##### Hamiltonian parameters ######")
@@ -109,7 +143,7 @@ class vibronic_model_hamiltonian(object):
         self.E, self.V = np.linalg.eigh(self.H_FCI)
         print("### FCI Hamiltonian successfully constructed ###")
         return
-    def calculate_ACF_from_FCI(self, time, basis_size, name):
+    def calculate_ACF_from_FCI(self, time, basis_size):
         """calculation time-correlation from FCI"""
         # compute ACF form FCI
         E, V = self.E, self.V
@@ -125,10 +159,10 @@ class vibronic_model_hamiltonian(object):
         df = pd.DataFrame(data)
 
         # store ACF data to csv format
-        df.to_csv(name+".csv", index=False)
+        df.to_csv(self.name+".csv", index=False)
 
         # store ACF data in autospec format
-        with open(name+".txt", 'w') as file:
+        with open(self.name+".txt", 'w') as file:
             file.write('#    time[fs]         Re(autocorrel)     Im(autocorrel)     Abs(autocorrel)\n')
             tmp = df.to_records(index=False)
             for t, Re, Im, Abs in tmp:

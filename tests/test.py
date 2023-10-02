@@ -13,48 +13,63 @@ import numpy as np
 # import the path to the package
 project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule/'))
 sys.path.insert(0, project_dir)
+inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/test_models/gamma_model/'
+outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
 from project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
+from project.vibronic import vIO, VMK
 
+order_dict = {
+    0: "constant",
+    1: "linear",
+    2: "quadratic",
+    3: "cubic",
+    4: "quartic",
+}
+
+
+def read_in_model(dir, model_name, order):
+    """read in model parameters from MCTDH operator file"""
+    # read in entire model
+    file_name = "{:}{:}.op".format(dir, model_name)
+    raw_model = vIO.read_raw_model_op_file(file_name, highest_order=order, dimension_of_dipole_moments=1)
+    # remove any higher order terms
+    vIO.remove_higher_order_terms(raw_model, highest_order=order)
+    # write new model into the mctdh operator file
+    vIO.write_raw_model_op_file(f"{dir}{model_name}_{order_dict[order]}.op", raw_model, highest_order=order)
+    # read in our specific model
+    path_op = join(inputdir, f"{model_name}_{order_dict[order]}.op")
+    model = vIO.extract_excited_state_model_op(path_op, FC=False, highest_order= order,\
+                    dimension_of_dipole_moments=1)
+    vIO.prepare_model_for_cc_integration(model,order)
+
+    return model
 
 def main():
     """main function that run TF-VECC simulation"""
     # Hamiltonian model parameters
+    order = 1
+
+    # Read in Hamiltonian model parameters
     # define number of vibrational model
-    num_mode = 2
+    name = "displaced_gamma_1"
 
-    num_surface = 2
+    model = read_in_model(inputdir, name, order=1)
 
-    # constant term (in eV)
-    VE = np.zeros([num_surface, num_surface])
-    VE[0, 0] = 0.6
-    VE[1, 1] = 3.1
-    # linear coupling constant (in eV)
-    LCP = np.zeros([num_surface, num_surface, num_mode])
-    LCP[0, 0, :] = np.array([0.28, 0.61]) / 2
-    LCP[0, 1, :] = np.array([0.18, 0.38]) / 2
-    LCP[1, 0, :] = np.array([0.18, 0.38]) / 2
-    LCP[1, 1, :] = np.array([0.34, 0.39]) / 2
-
-    # quadratic coupling constant
-    QCP = np.zeros([num_surface, num_surface, num_mode, num_mode])
-    QCP[0, 0, :] = np.array([[0.007341, 0.0004], [0.0004, 0.008899]])*0
-    QCP[0, 1, :] = np.array([[0.001867, 0.0005], [0.0005, 0.006013]])*0
-    QCP[1, 0, :] = np.array([[0.001867, 0.0005], [0.0005, 0.006013]])*0
-    QCP[1, 1, :] = np.array([[0.002257, 0.0001], [0.0001, 0.007940]])*0
-
-    # frequancies (in eV)
-    Freq = np.array([0.21, 0.43])
-
-    # transition dipole moment
-    TDM = np.array([0.1, 0.1])
+    print("number of surfaces:{:}".format(model[VMK.A]))
+    print("number of modes:{:}".format(model[VMK.N]))
+    print("verticle energy (in eV):\n{:}".format(model[VMK.E]))
+    print("Frequencies (in eV):\n{:}".format(model[VMK.w]))
+    print("Linear coupling constants (in eV):\n{:}".format(model[VMK.G1]))
+    if order >= 2:
+        print("Quadratic coupling constants (in eV):\n{:}".format(model[VMK.G2]))
 
     # initialize the Hamiltonian
-    model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, TDM, num_mode, num_surface)
+    model = vibronic_model_hamiltonian(model, name, truncation_order=1)
     model.construct_full_Hamiltonian_in_HO_basis(basis_size=10)
     # model.calculate_state_pop_from_FCI(time=np.linspace(0,100,10000), basis_size=10)
-    model.calculate_ACF_from_FCI(time=np.linspace(0,100,10001), basis_size=10, name="FCI_ACF")
+    model.calculate_ACF_from_FCI(time=np.linspace(0,100,10001), basis_size=10)
 
 
     return
