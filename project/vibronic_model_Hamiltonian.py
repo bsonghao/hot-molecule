@@ -30,7 +30,7 @@ import opt_einsum as oe
 
 # local imports
 # import the path to the package
-project_dir = abspath(join(dirname(__file__), '/home/paulie/hot-molecule'))
+project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule/'))
 sys.path.insert(0, project_dir)
 from project.two_mode_model import model_two_mode
 
