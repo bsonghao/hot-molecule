@@ -144,6 +144,111 @@ class vibronic_model_hamiltonian(object):
 
         log.info("### End of Hamiltonian parameters ####")
 
+    def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N_step=10000, compare_with_TNOE=False):
+        """calculation thermal properties through sum over states"""
+        A, N = self.A, self.N
+        def _construct_vibrational_Hamitonian(h):
+            """construct vibrational Hamiltonian in H.O. basis"""
+            Hamiltonian = np.zeros((basis_size, basis_size, basis_size, basis_size))
+            for a_1 in range(basis_size):
+                for a_2 in range(basis_size):
+                    for b_1 in range(basis_size):
+                        for b_2 in range(basis_size):
+                            if a_1 == b_1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 0)]
+                                Hamiltonian[a_1, a_2, b_1, b_2] += h[(1, 1)][0, 0]*(b_1)+h[(1, 1)][1, 1]*(b_2)
+                            if a_1 == b_1+1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 1)][0, 1]*np.sqrt(b_1+1)*np.sqrt(b_2)
+                            if a_1 == b_1-1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 1)][1, 0]*np.sqrt(b_1)*np.sqrt(b_2+1)
+                            if a_1 == b_1+1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 0)][0]*np.sqrt(b_1+1)
+                            if a_1 == b_1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 0)][1]*np.sqrt(b_2+1)
+                            if a_1 == b_1-1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 1)][0]*np.sqrt(b_1)
+                            if a_1 == b_1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 1)][1]*np.sqrt(b_2)
+                            if a_1 == b_1+2 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(2, 0)][0, 0]*np.sqrt(b_1+1)*np.sqrt(b_1+2)
+                            if a_1 == b_1+1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (h[(2, 0)][0, 1] + h[(2, 0)][1, 0])*np.sqrt(b_1+1)*np.sqrt(b_2+1)
+                            if a_1 == b_1 and a_2 == b_2+2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(2, 0)][1, 1]*np.sqrt(b_2+1)*np.sqrt(b_2+2)
+                            if a_1 == b_1-2 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 2)][0, 0]*np.sqrt(b_1)*np.sqrt(b_1-1)
+                            if a_1 == b_1-1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (h[(0, 2)][0, 1] + h[(0, 2)][1, 0])*np.sqrt(b_1)*np.sqrt(b_2)
+                            if a_1 == b_1 and a_2 == b_2-2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 2)][1, 1]*np.sqrt(b_2)*np.sqrt(b_2-1)
+
+            Hamiltonian = Hamiltonian.reshape(basis_size**N, basis_size**N)
+
+            return Hamiltonian
+
+        def construct_full_Hamitonian():
+            """contruction the full vibronic Hamiltonian in FCI H.O. basis"""
+            # initialize the Hamiltonian
+            H_FCI = np.zeros([A, basis_size**N, A, basis_size**N])
+            # contruction the full Hamiltonian surface by surface
+            for a, b in it.product(range(A), repeat=2):
+                h = {}
+                for block in self.H.keys():
+                    if block != (0, 0):
+                        h[block] = self.H[block][a, b, :]
+                    else:
+                        h[block] = self.H[block][a, b]
+
+                H_FCI[a, :, b][:] += _construct_vibrational_Hamitonian(h)
+
+            H_FCI = H_FCI.reshape(A*basis_size**N, A*basis_size**N)
+
+            return H_FCI
+
+        def Cal_partition_function(E, T):
+            """ compute partition function """
+            Z = sum(np.exp(-E / (self.Kb * T)))
+            return Z
+
+        def Cal_thermal_internal_energy(E, T, Z):
+            """ compute thermal_internal_energy """
+            energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
+            return energy
+
+        log.info("### Start sum over state calculation! ###")
+
+        if compare_with_TNOE:
+            T_grid = self.temperature_grid
+        else:
+            beta_initial = 1. / (T_initial * self.Kb)
+            beta_final = 1. / (T_final * self.Kb)
+            T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N_step))
+        # contruct Hamiltonian in H.O. basis
+        H = construct_full_Hamitonian()
+        # check Hermicity of the Hamitonian in H. O. basis
+        assert np.allclose(H, H.transpose())
+        # diagonalize the Hamiltonian
+        E, V = np.linalg.eigh(H)
+        # store eigenvector and eigenvalues as class instances
+        self.E_val = E
+        self.V_val = V
+        # calculate partition function
+        partition_function = np.zeros_like(T_grid)
+        for i, T in enumerate(T_grid):
+            partition_function[i] = Cal_partition_function(E, T)
+
+        # calculate thermal internal energy
+        thermal_internal_energy = np.zeros_like(T_grid)
+        for i, T in enumerate(T_grid):
+            thermal_internal_energy[i] = Cal_thermal_internal_energy(E, T, partition_function[i])
+
+        # store thermal data
+        thermal_data = {"T(K)": T_grid, "partition function": partition_function, "internal energy": thermal_internal_energy}
+        df = pd.DataFrame(thermal_data)
+        df.to_csv(output_path+"{:}_thermal_data_FCI.csv".format(self.name), index=False)
+        log.info("### Sum over state calculation teminated gracefully! ###")
+        return
+
     def thermal_field_transform(self, T_ref):
         """
         conduct Bogoliubov transfrom of the physical hamiltonian
@@ -891,8 +996,8 @@ class vibronic_model_hamiltonian(object):
 
 
         # set up tolerance for the RK integrator
-        relative_tolerance = 1e-012
-        absolute_tolerance = 1e-014
+        relative_tolerance = 1e-03
+        absolute_tolerance = 1e-04
         # ------------------------------------------------------------------------
         # call the integrator
         # ------------------------------------------------------------------------

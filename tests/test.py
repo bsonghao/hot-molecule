@@ -15,7 +15,7 @@ import json
 # import the path to the package
 project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule'))
 sys.path.insert(0, project_dir)
-inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/'
+inputdir = '/Users/pauliebao/t-amplitudes/vibronic_models/test_models/low_freq_model/'
 outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
@@ -70,23 +70,29 @@ def main():
     """main function that run TNOE simulation"""
     # Read in Hamiltonian model parameters
     # define number of vibrational model
-    name = "CoF4"
+    name = "low_freq_model_strong_coup"
 
     integrator_flag = "RK"
 
-    model = read_in_model(inputdir, name, order=2)
+    hamiltonian_truncation_order = 1
+
+    model = read_in_model(inputdir, name, order=1)
 
     print("number of surfaces:{:}".format(model[VMK.A]))
     print("number of modes:{:}".format(model[VMK.N]))
     print("verticle energy (in eV):\n{:}".format(model[VMK.E]))
     print("Frequencies (in eV):\n{:}".format(model[VMK.w]))
     print("Linear coupling constants (in eV):\n{:}".format(model[VMK.G1]))
-    print("Quadratic coupling constants (in eV):\n{:}".format(model[VMK.G2]))
+    if hamiltonian_truncation_order >=2:
+        print("Quadratic coupling constants (in eV):\n{:}".format(model[VMK.G2]))
 
     # assert np.allclose(model[VMK.G2], np.transpose(model[VMK.G2], (1, 0, 3, 2)))
 
     # initialize the Hamiltonian
-    model = vibronic_model_hamiltonian(model, name, truncation_order=2, FC=False)
+    model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False)
+    # calculate thermal properties using the sum over states method
+    model.sum_over_states(output_path=outputdir, basis_size=80, T_initial=2000, T_final=10, N_step=500)
+    sys.exit(0)
     # Bogoliubov transform the Hamiltonian
     model.thermal_field_transform(T_ref=2e3)
     model.reduce_H_tilde()
@@ -94,7 +100,7 @@ def main():
     if integrator_flag == "Euler":
         model.TFCC_integration(T_initial=1e3, T_final=1e1, N_step=100000, output_path=outputdir) #(primary 1st order Euler method)
     elif integrator_flag == "RK":
-        func_string = 'model.rk45_integration(T_initial=1e3, T_final=1e1, nof_points=10000, output_path=outputdir)'
+        func_string = 'model.rk45_integration(T_initial=1e4, T_final=1e1, nof_points=10000, output_path=outputdir)'
         if True:
             # conduct profiling of the main simulation code
             filename = name + "_cProfile_data"
