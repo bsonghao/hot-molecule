@@ -70,7 +70,7 @@ def main():
     """main function that run TNOE simulation"""
     # Read in Hamiltonian model parameters
     # define number of vibrational model
-    name = "low_freq_model_strong_coup"
+    name = "low_freq_model_weak_coup"
 
     integrator_flag = "RK"
 
@@ -92,7 +92,7 @@ def main():
     model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False)
     # calculate thermal properties using the sum over states method
     model.sum_over_states(output_path=outputdir, basis_size=80, T_initial=2000, T_final=10, N_step=500)
-    sys.exit(0)
+    # sys.exit(0)
     # Bogoliubov transform the Hamiltonian
     model.thermal_field_transform(T_ref=2e3)
     model.reduce_H_tilde()

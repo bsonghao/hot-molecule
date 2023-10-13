@@ -144,6 +144,14 @@ class vibronic_model_hamiltonian(object):
 
         log.info("### End of Hamiltonian parameters ####")
 
+    def cal_free_energy(self, beta, partition_function):
+        """calculate Helmholtz free energy"""
+        return - 1. / beta * np.log(partition_function)
+
+    def cal_chemical_entropy(self, beta, internal_energy, free_energy):
+        """calculate chemical entropy"""
+        return beta * (internal_energy - free_energy) * self.Kb
+
     def sum_over_states(self, output_path, basis_size=40, T_initial=10000, T_final=100, N_step=10000, compare_with_TNOE=False):
         """calculation thermal properties through sum over states"""
         A, N = self.A, self.N
@@ -242,8 +250,26 @@ class vibronic_model_hamiltonian(object):
         for i, T in enumerate(T_grid):
             thermal_internal_energy[i] = Cal_thermal_internal_energy(E, T, partition_function[i])
 
+        # calculate Helmholtz free energy
+        free_energy = np.zeros_like(T_grid)
+        for i, T in enumerate(T_grid):
+            tau = 1. / (self.Kb * T)
+            free_energy[i] = self.cal_free_energy(tau, partition_function[i])
+
+        # calculate chemical entropy
+        chemical_entropy= np.zeros_like(T_grid)
+        for i, T in enumerate(T_grid):
+            tau = 1. / (self.Kb * T)
+            chemical_entropy[i] = self.cal_chemical_entropy(tau, thermal_internal_energy[i], free_energy[i])
+
         # store thermal data
-        thermal_data = {"T(K)": T_grid, "partition function": partition_function, "internal energy": thermal_internal_energy}
+        thermal_data = {
+                        "T(K)": T_grid,
+                        "partition function": partition_function,
+                        "internal energy": thermal_internal_energy,
+                        "free energy": free_energy,
+                        "chemical entropy": chemical_entropy
+                        }
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"{:}_thermal_data_FCI.csv".format(self.name), index=False)
         log.info("### Sum over state calculation teminated gracefully! ###")
@@ -904,6 +930,10 @@ class vibronic_model_hamiltonian(object):
         Z = np.trace(Z_amplitude[0])
         # calculate thermal internal energy
         E = np.trace(Z_residual[0]) / Z
+        # calculate Helmholtz free energy
+        F = self.cal_free_energy(time, Z)
+        # calculate chemical entropy
+        S = self.cal_chemical_entropy(time, E, F)
 
         # flatten the z, t tensors into a 1D array
         delta_y_tensor = self._ravel_y_tensor(Z_residual, T_residual)
@@ -911,6 +941,8 @@ class vibronic_model_hamiltonian(object):
         # store thermal properties data
         self.partition_function.append((time, Z))
         self.internal_energy.append((time, E))
+        self.free_energy.append((time, F))
+        self.chemical_entropy.append((time, S))
 
         return -delta_y_tensor
 
@@ -929,6 +961,8 @@ class vibronic_model_hamiltonian(object):
         # initialize the arrays to store the thermal properties
         self.partition_function_cc = np.zeros_like(self.t_cc)
         self.internal_energy_cc = np.zeros_like(self.t_cc)
+        self.free_energy_cc = np.zeros_like(self.t_cc)
+        self.chemical_entropy_cc = np.zeros_like(self.t_cc)
 
         # log.info(len(self.C_tau_cc))
         # log.info(len(self.C_tau_cc_store))
@@ -942,12 +976,26 @@ class vibronic_model_hamiltonian(object):
         for idx, t in enumerate(sol.t):
             self.internal_energy_cc[idx] = C_dic_internal_energy[t]
 
+        C_dic_free_energy = {c[0]: c[1] for c in self.free_energy}
+        for idx, t in enumerate(sol.t):
+            self.free_energy_cc[idx] = C_dic_free_energy[t]
+
+        C_dic_chemical_entropy = {c[0]: c[1] for c in self.chemical_entropy}
+        for idx, t in enumerate(sol.t):
+            self.chemical_entropy_cc[idx] = C_dic_chemical_entropy[t]
+
         log.debug(f"Status message: {sol.message}")  # description of termination reason
         log.debug(f"status: {sol.status}")  # -1: step failed, 0: reached end of tspan, 1: termination event occurred
         log.debug(f"Succeeded?: {sol.success}")  # bool if reached end of interval or termination event occurred
 
         # store data
-        thermal_data = {"temperature": 1. / (self.Kb * sol.t), "internal energy": self.internal_energy_cc, "partition function": self.partition_function_cc}
+        thermal_data = {
+                        "temperature": 1. / (self.Kb * sol.t),
+                        "internal energy": self.internal_energy_cc,
+                        "partition function": self.partition_function_cc,
+                        "free energy": self.free_energy_cc,
+                        "chemical entropy": self.chemical_entropy_cc
+                        }
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"{:}_thermal_data_TFCC_RK.csv".format(self.name), index=False)
 
@@ -985,6 +1033,8 @@ class vibronic_model_hamiltonian(object):
         # initialize thermal propeties as empty lists
         self.partition_function = []
         self.internal_energy = []
+        self.free_energy = []
+        self.chemical_entropy = []
 
 
         # prepare the initial y_tensor
