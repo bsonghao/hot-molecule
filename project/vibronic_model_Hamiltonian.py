@@ -142,6 +142,8 @@ class vibronic_model_hamiltonian(object):
 
         log.info("Boltzmann constant: {:} eV K-1".format(self.Kb))
 
+        log.info("Zero point energy: {:} eV".format(sum(self.model[VMK.w])/2.))
+
         log.info("### End of Hamiltonian parameters ####")
 
     def cal_free_energy(self, beta, partition_function):
@@ -1046,8 +1048,8 @@ class vibronic_model_hamiltonian(object):
 
 
         # set up tolerance for the RK integrator
-        relative_tolerance = 1e-03
-        absolute_tolerance = 1e-04
+        relative_tolerance = 1e-10
+        absolute_tolerance = 1e-12
         # ------------------------------------------------------------------------
         # call the integrator
         # ------------------------------------------------------------------------
