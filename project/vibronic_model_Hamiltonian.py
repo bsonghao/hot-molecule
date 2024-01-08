@@ -205,3 +205,44 @@ class vibronic_model_hamiltonian(object):
         print("### state population is successfully computed from FCI")
 
         return
+
+
+    def time_integration(self, t_final, num_steps, basis_size):
+        """
+        perform time integration
+        t_final: time range of the integration
+        num_steps: number of steps in the integration
+        """
+        A, N = self.A, self.N
+        dtau = t_final / num_steps
+        time = np.linspace(0, t_final, num_steps)
+        # initialize T
+        T = np.zeros([A, N], dtype=complex)
+        # initialize C
+        C = np.zeros([A, basis_size, basis_size, A, basis_size, basis_size], dtype=complex)
+        for x, y in it.product(range(A), repeat=2):
+            for m_1, m_2, n_1, n_2 in it.product(range(basis_size), repeat=4):
+                if x==y and m_1 == n_1 and m_2 == n_2:
+                    C[x, m_1, m_2, y, n_1, n_2] = 1
+
+        for b in range(A):
+            pop_list = []
+            for i in range(num_steps):
+                # step 1: double similarity transform the Hamiltonian and calcuation dT
+                G_args, dT[b, :] = self.double_similarity_transform(self.H, T[b, :])
+                # step 2: resolve the similarity transform Hamiltonian and CI operator in finite H.O. basis and calculate dC
+                dC = self.resolve_G(G_args, C, basis_size)
+                # step 3: calcuate the state population from C in H.O. basis
+                pop = self.cal_state_pop(C)
+                pop_list.append(pop)
+                # step 4: update T and C
+                T -= dT * 1j * unit
+                C -= dC * 1j * unit
+            # store state population data
+            pop_dic = {"time(fs)": time, "population": pop_list}
+            df = pd.DataFrame(pop_dic)
+            name = "state_pop_for_surface_{:}_from_VECC.csv".format(b)
+            df.to_csv(name, index=False)
+
+
+        return
