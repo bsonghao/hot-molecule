@@ -206,6 +206,197 @@ class vibronic_model_hamiltonian(object):
 
         return
 
+    def double_similarity_transform(self, T_args, CI_op, b):
+        """
+        Perform doubly similarity transformation of the origin vibronic Hamiltonian
+        and Ehrenfest parameterized T residue
+        """
+        A, N = self.A, self.N
+        def first_transform():
+
+            """perform first similarity transformation: (H e^T)_conn"""
+            def f_t_0(H, T):
+                """return residue R_0"""
+
+                # initialize as zero
+                R = np.zeros([A, A], dtype=complex)
+
+                # constant
+                R += H[(0, 0)]
+
+                # linear
+                R += np.einsum('abk,k->ab', H[(0, 1)], T)
+                # quadratic
+                R += 0.5 * np.einsum('abkl,k,l->ab', H[(0, 2)], T, T)
+
+                return R
+
+            def f_t_I(H, T):
+                """return residue R_I"""
+
+                # initialize as zero
+                R = np.zeros([A, A, N], dtype=complex)
+
+                # linear
+                R += H[(0, 1)]
+
+                # quadratic
+                R += np.einsum('abik,k->abi', H[(0, 2)], T)
+
+                return R
+
+            def f_t_i(H, T):
+                """return residue R_i"""
+
+                # initialize
+                R = np.zeros([A, A, N], dtype=complex)
+
+                # non zero initial value of R
+                R += H[(1, 0)]
+
+                # linear
+                R += np.einsum('abki,k->abi', H[(1, 1)], T)
+
+                return R
+
+            def f_t_Ij(H, T):
+                """return H[(1, 1)]"""
+
+                return H[(1, 1)]
+
+            def f_t_IJ(H, T):
+                """return H[(0, 2)]"""
+                return H[(0, 2)]
+
+            def f_t_ij(H, T):
+                """return H[(2, 0)]"""
+                return H[(2, 0)]
+            # compute similarity transformed Hamiltonian over e^T
+            sim_h = {}
+            sim_h[(0, 0)] = f_t_0(self.H, T_args)
+            sim_h[(0, 1)] = f_t_I(self.H, T_args)
+            sim_h[(1, 0)] = f_t_i(self.H, T_args)
+            sim_h[(1, 1)] = f_t_Ij(self.H, T_args)
+            sim_h[(0, 2)] = f_t_IJ(self.H, T_args)
+            sim_h[(2, 0)] = f_t_ij(self.H, T_args)
+
+            return sim_h
+
+
+        def second_transform(H_bar):
+            """perform second similarity transformation: (e^T* H_bar)_conn"""
+            def f_s_0():
+                """return constant residue"""
+                # initialize as zero
+                R = np.zeros([A, A], dtype=complex)
+
+                R += H_bar[(0, 0)]
+
+                R += np.einsum('k,abk->ab', T_conj, H_bar[(1, 0)])
+
+                R += 0.5 * np.einsum('k,l,abkl->ab', T_conj, T_conj, H_bar[(2, 0)])
+
+                return R
+
+            def f_s_I():
+                """return residue R_I"""
+                R = np.zeros([A, A, N], dtype=complex)
+
+                R += H_bar[(1, 0)]
+
+                R += np.einsum('k,abik->abi', T_conj, H_bar[(2, 0)])
+
+                return R
+
+            def f_s_i():
+                """return residue R_i"""
+                R = np.zeros([A, A, N], dtype=complex)
+
+                R += H_bar[(0, 1)]
+
+                R += np.einsum('k,abki->abi', T_conj, H_bar[(1, 1)])
+
+                return R
+
+            def f_s_Ij():
+                """return residue R_Ij"""
+                return H_bar[(1, 1)]
+
+            T_conj = np.conj(T_args)
+            output_tensor = {
+                    (0, 0): f_s_0(),
+                    (1, 0): f_s_I(),
+                    (0, 1): f_s_i(),
+                    (1, 1): f_s_Ij(),
+                    (2, 0): H_bar[(2, 0)],
+                    (0, 2): H_bar[(0, 2)],
+            }
+            return output_tensor
+
+
+        def _compute_t_residual_new():
+            """compute t from Ehrenfest parameterization using the new scheme (weight C)"""
+
+            C_0_conj = np.conj(CI_op[:,b, 0, 0])
+            C_0 = C[[:,b, 0, 0]
+            weight = np.einsum('y,y->', C_0_conj, C_0)
+
+            # single t residue
+            dT = np.einsum('y,yxi,x->i', C_0_conj, H_bar_tilde[(1, 0)], C_0) / weight
+
+            return dT
+
+        def _sim_trans_dT(dT):
+            """ similarity transform dT"""
+            output_tensor = {
+                (0, 0): np.einsum('k,k->', T_conj dT),
+                (1, 0): dT
+            }
+            return output_tensor
+
+        def Cal_G(rho, dT):
+            """calcuation G by sustraction of T residual contribtion from the doubly transformed Hamiltonian"""
+            dT_conj = np.conj(dT)
+
+            G = H_bar_tilde.copy()
+            G[(0, 0)] -= rho[(0, 0)] * np.eye(A)
+            G[(1, 0)] -= np.einsum('i,xy->xyi' rho[(1, 0)], np.eye(A))
+            G[(0, 1)] -= 1j * np.einum('i, xy-> xyi', dT_conj, np.eye(A))
+
+            return G
+
+
+
+
+        # perform first similarity transfromation of the vibronic Hamiltonian H
+        H_bar = first_transform()
+
+        # perform second similarity transformation of the vibronic Hamiltonian
+        H_bar_tilde = second_transform(H_bar)
+
+        # calculate T residual using Ehrenfest parameterization
+        T_residual = _compute_t_residual_new()
+
+        # calculate G by sustraction of T residual contribution from the doubly transformed Hamiltonian
+        # compute rho
+        rho = _sim_trans_dT(T_residual)
+        trans_H = Cal_G(rho, dT)
+
+        return trans_H, T_residual
+
+    def resolve_G(self, trans_H, CI_op, basis_size):
+        """
+        resolve the doubly transformed in finite H.O. basis and compute
+        residual for CI operator C (resolved in H.O. basis)
+        """
+        return dC
+
+    def cal_state_pop(self, CI_op):
+        """
+        calculate the state population from CI operator resolved in finite H.O. basis
+        """
+        return population
+
 
     def time_integration(self, t_final, num_steps, basis_size):
         """
@@ -219,17 +410,16 @@ class vibronic_model_hamiltonian(object):
         # initialize T
         T = np.zeros([A, N], dtype=complex)
         # initialize C
-        C = np.zeros([A, basis_size, basis_size, A, basis_size, basis_size], dtype=complex)
+        C = np.zeros([A, A, basis_size, basis_size], dtype=complex)
         for x, y in it.product(range(A), repeat=2):
-            for m_1, m_2, n_1, n_2 in it.product(range(basis_size), repeat=4):
-                if x==y and m_1 == n_1 and m_2 == n_2:
-                    C[x, m_1, m_2, y, n_1, n_2] = 1
+            if x==y:
+                C[x, y, 0, 0] = 1
 
         for b in range(A):
             pop_list = []
             for i in range(num_steps):
                 # step 1: double similarity transform the Hamiltonian and calcuation dT
-                G_args, dT[b, :] = self.double_similarity_transform(self.H, T[b, :])
+                G_args, dT[b, :] = self.double_similarity_transform(T[b, :], C, b)
                 # step 2: resolve the similarity transform Hamiltonian and CI operator in finite H.O. basis and calculate dC
                 dC = self.resolve_G(G_args, C, basis_size)
                 # step 3: calcuate the state population from C in H.O. basis
