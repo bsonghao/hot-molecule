@@ -61,7 +61,7 @@ class vibronic_model_hamiltonian(object):
         self.TDM = self.E_tdm = model[VMK.etdm][0]
         print("Transition dipole moment:\n{:}".format(self.TDM))
         # name of the model
-        self.name = name
+        self.model_name = name
 
         # Hamiltonian truncation order
         self.truncation_order = truncation_order
@@ -159,7 +159,7 @@ class vibronic_model_hamiltonian(object):
         df = pd.DataFrame(data)
 
         # store ACF data to csv format
-        df.to_csv(self.name+".csv", index=False)
+        df.to_csv(self.model_name+".csv", index=False)
 
         # store ACF data in autospec format
         with open(self.name+".txt", 'w') as file:
@@ -200,7 +200,7 @@ class vibronic_model_hamiltonian(object):
             for a in range(self.A):
                 temp[str(a)] = state_pop[b, a, :]
             df = pd.DataFrame(temp)
-            name = "state_pop_for_surface_{:}_from_FCI.csv".format(b)
+            name = "{:}_state_pop_for_surface_{:}_from_FCI.csv".format(self.model_name, b)
             df.to_csv(name, index=False)
         print("### state population is successfully computed from FCI")
 
@@ -464,7 +464,7 @@ class vibronic_model_hamiltonian(object):
         CI_op_conj = np.conj(CI_op)
         population = np.einsum('xn,yn->xy', CI_op_conj, CI_op)
         population /= np.einsum('xn,xn->', CI_op_conj, CI_op)
-        return population
+        return np.diag(population)
 
 
     def time_integration(self, t_final, num_steps, basis_size):
@@ -503,9 +503,13 @@ class vibronic_model_hamiltonian(object):
                 if i % 100 == 0:
                     print("At t= {:.4f} fs, state polution for state {:d}:\n{:}".format(dtau * i, b, pop))
             # store state population data
-            pop_dic = {"time(fs)": time, "population": pop_list}
+            pop_dic = {"time(fs)": time}
+            for a in range(A):
+                pop_dic[str(a)] = []
+                for i in range(num_steps):
+                    pop_dic[str(a)].append(pop_list[i][a])
             df = pd.DataFrame(pop_dic)
-            name = "state_pop_for_surface_{:}_from_VECC.csv".format(b)
+            name = "{:}_state_pop_for_surface_{:}_from_VECC.csv".format(self.model_name, b)
             df.to_csv(name, index=False)
 
 
