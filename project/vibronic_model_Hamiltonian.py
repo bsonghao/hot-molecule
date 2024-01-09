@@ -212,8 +212,9 @@ class vibronic_model_hamiltonian(object):
         and Ehrenfest parameterized T residue
         """
         A, N = self.A, self.N
-        def first_transform():
+        T_conj = np.conj(T_args)
 
+        def first_transform():
             """perform first similarity transformation: (H e^T)_conn"""
             def f_t_0(H, T):
                 """return residue R_0"""
@@ -322,7 +323,7 @@ class vibronic_model_hamiltonian(object):
                 """return residue R_Ij"""
                 return H_bar[(1, 1)]
 
-            T_conj = np.conj(T_args)
+
             output_tensor = {
                     (0, 0): f_s_0(),
                     (1, 0): f_s_I(),
@@ -337,8 +338,8 @@ class vibronic_model_hamiltonian(object):
         def _compute_t_residual_new():
             """compute t from Ehrenfest parameterization using the new scheme (weight C)"""
 
-            C_0_conj = np.conj(CI_op[:,b, 0, 0])
-            C_0 = C[[:,b, 0, 0]
+            C_0_conj = np.conj(CI_op[:,0])
+            C_0 = CI_op[:,0]
             weight = np.einsum('y,y->', C_0_conj, C_0)
 
             # single t residue
@@ -349,7 +350,7 @@ class vibronic_model_hamiltonian(object):
         def _sim_trans_dT(dT):
             """ similarity transform dT"""
             output_tensor = {
-                (0, 0): np.einsum('k,k->', T_conj dT),
+                (0, 0): np.einsum('k,k->', T_conj, dT),
                 (1, 0): dT
             }
             return output_tensor
@@ -360,13 +361,10 @@ class vibronic_model_hamiltonian(object):
 
             G = H_bar_tilde.copy()
             G[(0, 0)] -= rho[(0, 0)] * np.eye(A)
-            G[(1, 0)] -= np.einsum('i,xy->xyi' rho[(1, 0)], np.eye(A))
-            G[(0, 1)] -= 1j * np.einum('i, xy-> xyi', dT_conj, np.eye(A))
+            G[(1, 0)] -= np.einsum('i,xy->xyi', rho[(1, 0)], np.eye(A))
+            G[(0, 1)] -= 1j * np.einsum('i, xy-> xyi', dT_conj, np.eye(A))
 
             return G
-
-
-
 
         # perform first similarity transfromation of the vibronic Hamiltonian H
         H_bar = first_transform()
@@ -380,7 +378,8 @@ class vibronic_model_hamiltonian(object):
         # calculate G by sustraction of T residual contribution from the doubly transformed Hamiltonian
         # compute rho
         rho = _sim_trans_dT(T_residual)
-        trans_H = Cal_G(rho, dT)
+        # substration rho and dT component from the doubly transformed Hamiltonian
+        trans_H = Cal_G(rho, T_residual)
 
         return trans_H, T_residual
 
@@ -389,12 +388,82 @@ class vibronic_model_hamiltonian(object):
         resolve the doubly transformed in finite H.O. basis and compute
         residual for CI operator C (resolved in H.O. basis)
         """
+        A, N = self.A, self.N
+        def _construct_vibrational_Hamitonian(h):
+            """construct vibrational Hamiltonian in H.O. basis"""
+            Hamiltonian = np.zeros((basis_size, basis_size, basis_size, basis_size), dtype=complex)
+            for a_1 in range(basis_size):
+                for a_2 in range(basis_size):
+                    for b_1 in range(basis_size):
+                        for b_2 in range(basis_size):
+                            if a_1 == b_1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 0)]
+                                Hamiltonian[a_1, a_2, b_1, b_2] += h[(1, 1)][0, 0]*(b_1)+h[(1, 1)][1, 1]*(b_2)
+                            if a_1 == b_1+1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 1)][0, 1]*np.sqrt(b_1+1)*np.sqrt(b_2)
+                            if a_1 == b_1-1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 1)][1, 0]*np.sqrt(b_1)*np.sqrt(b_2+1)
+                            if a_1 == b_1+1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 0)][0]*np.sqrt(b_1+1)
+                            if a_1 == b_1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(1, 0)][1]*np.sqrt(b_2+1)
+                            if a_1 == b_1-1 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 1)][0]*np.sqrt(b_1)
+                            if a_1 == b_1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 1)][1]*np.sqrt(b_2)
+                            if a_1 == b_1+2 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(2, 0)][0, 0]*np.sqrt(b_1+1)*np.sqrt(b_1+2)
+                            if a_1 == b_1+1 and a_2 == b_2+1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (h[(2, 0)][0, 1] + h[(2, 0)][1, 0])*np.sqrt(b_1+1)*np.sqrt(b_2+1)
+                            if a_1 == b_1 and a_2 == b_2+2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(2, 0)][1, 1]*np.sqrt(b_2+1)*np.sqrt(b_2+2)
+                            if a_1 == b_1-2 and a_2 == b_2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 2)][0, 0]*np.sqrt(b_1)*np.sqrt(b_1-1)
+                            if a_1 == b_1-1 and a_2 == b_2-1:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = (h[(0, 2)][0, 1] + h[(0, 2)][1, 0])*np.sqrt(b_1)*np.sqrt(b_2)
+                            if a_1 == b_1 and a_2 == b_2-2:
+                                Hamiltonian[a_1, a_2, b_1, b_2] = h[(0, 2)][1, 1]*np.sqrt(b_2)*np.sqrt(b_2-1)
+
+            Hamiltonian = Hamiltonian.reshape(basis_size**N, basis_size**N)
+
+            return Hamiltonian
+
+        def construct_full_Hamitonian():
+            """contruction the full vibronic Hamiltonian in FCI H.O. basis"""
+            # initialize the Hamiltonian
+            H_FCI = np.zeros([A, basis_size**N, A, basis_size**N], dtype=complex)
+            # contruction the full Hamiltonian surface by surface
+            for a, b in it.product(range(A), repeat=2):
+                h = {}
+                for block in self.H.keys():
+                    if block != (0, 0):
+                        h[block] = trans_H[block][a, b, :]
+                    else:
+                        h[block] = trans_H[block][a, b]
+
+                H_FCI[a, :, b][:] += _construct_vibrational_Hamitonian(h)
+
+            # H_FCI = H_FCI.reshape(A*basis_size**N, A*basis_size**N)
+
+            return H_FCI
+
+        # resolve the similarity transformed Hamiltonian in H.O. basis
+        G_FCI = construct_full_Hamitonian()
+        # compute C residual
+        # print("shape of G_FCI:{:}".format(G_FCI.shape))
+        # print("shape of CI_op:{:}".format(CI_op.shape))
+        dC = np.einsum('ynxm,xm->yn', G_FCI, CI_op)
+
+
         return dC
 
-    def cal_state_pop(self, CI_op):
+    def cal_state_pop(self, CI_op, b):
         """
         calculate the state population from CI operator resolved in finite H.O. basis
         """
+        CI_op_conj = np.conj(CI_op)
+        population = np.einsum('xn,yn->xy', CI_op_conj, CI_op)
+        population /= np.einsum('xn,xn->', CI_op_conj, CI_op)
         return population
 
 
@@ -410,24 +479,29 @@ class vibronic_model_hamiltonian(object):
         # initialize T
         T = np.zeros([A, N], dtype=complex)
         # initialize C
-        C = np.zeros([A, A, basis_size, basis_size], dtype=complex)
+        C = np.zeros([A, basis_size, basis_size, A], dtype=complex)
         for x, y in it.product(range(A), repeat=2):
             if x==y:
-                C[x, y, 0, 0] = 1
+                C[x, 0, 0, y] = 1
+        # merge the vibrational dimensions
+        C = C.reshape(A, basis_size**N, A)
+        # print("shape of C: {:}".format(C[0,:].shape))
 
         for b in range(A):
             pop_list = []
             for i in range(num_steps):
                 # step 1: double similarity transform the Hamiltonian and calcuation dT
-                G_args, dT[b, :] = self.double_similarity_transform(T[b, :], C, b)
+                G_args, dT = self.double_similarity_transform(T[b, :], C[:, :, b], b)
                 # step 2: resolve the similarity transform Hamiltonian and CI operator in finite H.O. basis and calculate dC
-                dC = self.resolve_G(G_args, C, basis_size)
+                dC = self.resolve_G(G_args, C[:, : ,b], basis_size)
                 # step 3: calcuate the state population from C in H.O. basis
-                pop = self.cal_state_pop(C)
+                pop = self.cal_state_pop(C[:, :,b], b)
                 pop_list.append(pop)
                 # step 4: update T and C
-                T -= dT * 1j * unit
-                C -= dC * 1j * unit
+                T[b, : ] -= dT * 1j * self.unit * dtau
+                C[ :, :, b] -= dC * 1j * self.unit * dtau
+                if i % 100 == 0:
+                    print("At t= {:.4f} fs, state polution for state {:d}:\n{:}".format(dtau * i, b, pop))
             # store state population data
             pop_dic = {"time(fs)": time, "population": pop_list}
             df = pd.DataFrame(pop_dic)

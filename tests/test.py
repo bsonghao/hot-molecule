@@ -13,7 +13,7 @@ import numpy as np
 # import the path to the package
 project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule/'))
 sys.path.insert(0, project_dir)
-inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/test_models/gamma_model/'
+inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/test_models/model_on_VECC_paper/'
 outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
@@ -53,7 +53,7 @@ def main():
 
     # Read in Hamiltonian model parameters
     # define number of vibrational model
-    name = "displaced_gamma_1"
+    name = "low_freq_model_strong_coup_vibronic_linear"
 
     model = read_in_model(inputdir, name, order=1)
 
@@ -67,9 +67,10 @@ def main():
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(model, name, truncation_order=1)
-    model.construct_full_Hamiltonian_in_HO_basis(basis_size=10)
+    # model.construct_full_Hamiltonian_in_HO_basis(basis_size=10)
     # model.calculate_state_pop_from_FCI(time=np.linspace(0,100,10000), basis_size=10)
-    model.calculate_ACF_from_FCI(time=np.linspace(0,100,10001), basis_size=10)
+    # model.calculate_ACF_from_FCI(time=np.linspace(0,100,10001), basis_size=10)
+    model.time_integration(t_final=10, num_steps=1000, basis_size=10)
 
 
     return
