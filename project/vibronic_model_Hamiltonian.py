@@ -177,20 +177,32 @@ class vibronic_model_hamiltonian(object):
         """calculate state population as a function of time from FCI"""
         # unit converstion
         unit = self.unit
+        A, N = self.A, self.N
         print("### compute state population from FCI ###")
         def Cal_state_pop(E, V, b, time, basis_size=10):
-            pop = np.zeros([self.A, len(time)], dtype=complex)
-            V = V.reshape([self.A, basis_size, basis_size, self.A * basis_size**self.N])
-            for a in range(self.A):
-                for l in range(len(E)):
-                    for n_1 in range(basis_size):
-                        for n_2 in range(basis_size):
-                            pop[a, :] += np.exp(-1j * E[l] * time * unit) * V[a, n_1, n_2, l] * V[b, 0, 0, l]
-            return abs(pop)**2 / sum(abs(pop)**2)
+            """calculate state population from FCI"""
+
+            V_dagger = np.transpose(V)
+            V_dagger = V_dagger.reshape([A, basis_size**N, A * basis_size**N])
+
+            # reshape the eignvector V
+            V = V.reshape([A, basis_size**N, A * basis_size**N])
+
+            propagator_matrix = np.zeros([len(E), len(E), len(time)], dtype=complex)
+            for m, n in it.product(range(len(E), repeat=2):
+                propagator_matrix[m, n, :] += np.exp(1j * unit * (E[m]-E[n]) * time)
+
+            pop = np.einsum('lmt, l, xnl, xnm, m->xt', propagator_matrix, V[b, 0, : ], V, V, V[b, 0, :])
+            if False:
+                pop_ = np.zeros([A, len(time)], dtype=complex)
+                for x, l, m, n in it.product(range(A), range(len(E)), range(len(E)), range(basis_size**N)):
+                    pop_[x, :] += np.exp(1j * unit * (E[l] - E[m]) * time) * V[b, 0, l] * V[x, n, l] * V[x, n, m] * V[b, 0, m]
+                assert np.allclose(pop, pop_)
+            return pop
 
         E, V = self.E, self.V
         print("###construct state population one surface at a time ###")
-        state_pop = np.zeros([self.A, self.A, len(time)])
+        state_pop = np.zeros([self.A, self.A, len(time)], dtype=complex)
         for b in range(self.A):
             state_pop[b, :] = Cal_state_pop(E, V, b, time, basis_size=basis_size)
         print("### store state pululation data to csv ###")
@@ -509,7 +521,7 @@ class vibronic_model_hamiltonian(object):
                 for i in range(num_steps):
                     pop_dic[str(a)].append(pop_list[i][a])
             df = pd.DataFrame(pop_dic)
-            name = "{:}_state_pop_for_surface_{:}_from_VECC.csv".format(self.model_name, b)
+            name = "{:}_state_pop_for_surface_{:}_{:d}_basis_per_mode_from_VECC.csv".format(self.model_name, b,  basis_size)
             df.to_csv(name, index=False)
 
 
