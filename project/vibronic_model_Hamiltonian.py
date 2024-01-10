@@ -189,7 +189,7 @@ class vibronic_model_hamiltonian(object):
             V = V.reshape([A, basis_size**N, A * basis_size**N])
 
             propagator_matrix = np.zeros([len(E), len(E), len(time)], dtype=complex)
-            for m, n in it.product(range(len(E), repeat=2):
+            for m, n in it.product(range(len(E)), repeat=2):
                 propagator_matrix[m, n, :] += np.exp(1j * unit * (E[m]-E[n]) * time)
 
             pop = np.einsum('lmt, l, xnl, xnm, m->xt', propagator_matrix, V[b, 0, : ], V, V, V[b, 0, :])
