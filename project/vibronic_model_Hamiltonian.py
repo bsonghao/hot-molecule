@@ -188,11 +188,20 @@ class vibronic_model_hamiltonian(object):
             # reshape the eignvector V
             V = V.reshape([A, basis_size**N, A * basis_size**N])
 
-            propagator_matrix = np.zeros([len(E), len(E), len(time)], dtype=complex)
-            for m, n in it.product(range(len(E)), repeat=2):
-                propagator_matrix[m, n, :] += np.exp(1j * unit * (E[m]-E[n]) * time)
+            # propagator_matrix = np.zeros([len(E), len(E), len(time)], dtype=complex)
+            # for m, n in it.product(range(len(E)), repeat=2):
+                # propagator_matrix[m, n, :] += np.exp(1j * unit * (E[m]-E[n]) * time)
 
-            pop = np.einsum('lmt, l, xnl, xnm, m->xt', propagator_matrix, V[b, 0, : ], V, V, V[b, 0, :])
+            # pop = np.einsum('lmt, l, xnl, xnm, m->xt', propagator_matrix, V[b, 0, : ], V, V, V[b, 0, :])
+
+            # simpler way to calculation state population:
+            C = np.zeros([A, basis_size**N, len(time)], dtype=complex)
+            for i, t in enumerate(time):
+                C[:,:,i] = np.einsum('l,xnl,l->xn', np.exp(-1j * E * unit * t), V, V[b, 0, :])
+            pop = np.einsum('xnt,xnt->xt', np.conjugate(C), C)
+            # assert np.allclose(pop_new, pop)
+
+
             if False:
                 pop_ = np.zeros([A, len(time)], dtype=complex)
                 for x, l, m, n in it.product(range(A), range(len(E)), range(len(E)), range(basis_size**N)):
@@ -212,7 +221,7 @@ class vibronic_model_hamiltonian(object):
             for a in range(self.A):
                 temp[str(a)] = state_pop[b, a, :]
             df = pd.DataFrame(temp)
-            name = "{:}_state_pop_for_surface_{:}_from_FCI.csv".format(self.model_name, b)
+            name = "{:}_state_pop_for_surface_{:}_from_FCI_{:}_basis_per_mode.csv".format(self.model_name, b, basis_size)
             df.to_csv(name, index=False)
         print("### state population is successfully computed from FCI")
 
@@ -349,9 +358,8 @@ class vibronic_model_hamiltonian(object):
 
         def _compute_t_residual_new():
             """compute t from Ehrenfest parameterization using the new scheme (weight C)"""
-
-            C_0_conj = np.conj(CI_op[:,0])
-            C_0 = CI_op[:,0]
+            C_0_conj = np.conj(CI_op[ :, 0])
+            C_0 = CI_op[ :, 0]
             weight = np.einsum('y,y->', C_0_conj, C_0)
 
             # single t residue
@@ -373,8 +381,18 @@ class vibronic_model_hamiltonian(object):
 
             G = H_bar_tilde.copy()
             G[(0, 0)] -= rho[(0, 0)] * np.eye(A)
+            if False:
+                X = np.zeros([A, A, N], dtype=complex)
+                for a in range(A):
+                    X[a, a, :] += rho[(1, 0)]
+                assert np.allclose(X, np.einsum('i,xy->xyi', rho[(1, 0)], np.eye(A)))
             G[(1, 0)] -= np.einsum('i,xy->xyi', rho[(1, 0)], np.eye(A))
-            G[(0, 1)] -= 1j * np.einsum('i, xy-> xyi', dT_conj, np.eye(A))
+            if False:
+                X = np.zeros([A, A, N], dtype=complex)
+                for a in range(A):
+                    X[a, a, :] += dT_conj
+                assert np.allclose(X, np.einsum('i,xy->xyi', dT_conj, np.eye(A)))
+            G[(0, 1)] -= np.einsum('i,xy->xyi', dT_conj, np.eye(A))
 
             return G
 
@@ -473,13 +491,13 @@ class vibronic_model_hamiltonian(object):
         """
         calculate the state population from CI operator resolved in finite H.O. basis
         """
-        CI_op_conj = np.conj(CI_op)
-        population = np.einsum('xn,yn->xy', CI_op_conj, CI_op)
+        CI_op_conj = np.conjugate(CI_op)
+        population = np.einsum('xn,xn->x', CI_op_conj, CI_op)
         population /= np.einsum('xn,xn->', CI_op_conj, CI_op)
-        return np.diag(population)
+        return population
 
 
-    def time_integration(self, t_final, num_steps, basis_size):
+    def time_integration(self, t_final, num_steps, basis_size, compare_with_ED=False):
         """
         perform time integration
         t_final: time range of the integration
@@ -491,27 +509,31 @@ class vibronic_model_hamiltonian(object):
         # initialize T
         T = np.zeros([A, N], dtype=complex)
         # initialize C
-        C = np.zeros([A, basis_size, basis_size, A], dtype=complex)
+        C = np.zeros([A, A, basis_size, basis_size], dtype=complex)
         for x, y in it.product(range(A), repeat=2):
             if x==y:
-                C[x, 0, 0, y] = 1
+                C[x, y, 0, 0] = 1
         # merge the vibrational dimensions
-        C = C.reshape(A, basis_size**N, A)
+        C = C.reshape(A, A, basis_size**N)
         # print("shape of C: {:}".format(C[0,:].shape))
 
         for b in range(A):
             pop_list = []
             for i in range(num_steps):
                 # step 1: double similarity transform the Hamiltonian and calcuation dT
-                G_args, dT = self.double_similarity_transform(T[b, :], C[:, :, b], b)
+                if not compare_with_ED:
+                    G_args, dT = self.double_similarity_transform(T[b, :], C[b,: ], b)
+                else:
+                    G_args = self.H
+                    dT = 0
                 # step 2: resolve the similarity transform Hamiltonian and CI operator in finite H.O. basis and calculate dC
-                dC = self.resolve_G(G_args, C[:, : ,b], basis_size)
+                dC = self.resolve_G(G_args, C[b,: ], basis_size)
                 # step 3: calcuate the state population from C in H.O. basis
-                pop = self.cal_state_pop(C[:, :,b], b)
+                pop = self.cal_state_pop(C[b,: ], b)
                 pop_list.append(pop)
                 # step 4: update T and C
-                T[b, : ] -= dT * 1j * self.unit * dtau
-                C[ :, :, b] -= dC * 1j * self.unit * dtau
+                T[b,: ] -= dT * 1j * self.unit * dtau
+                C[b,: ] -= dC * 1j * self.unit * dtau
                 if i % 100 == 0:
                     print("At t= {:.4f} fs, state polution for state {:d}:\n{:}".format(dtau * i, b, pop))
             # store state population data
