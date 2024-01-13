@@ -158,11 +158,12 @@ class vibronic_model_hamiltonian(object):
         data = {'time': time, 'Re': ACF.real, 'Im': ACF.imag, 'Abs': abs(ACF)}
         df = pd.DataFrame(data)
 
+        file_name = "ACF_{:}_{:}_basis_per_mode_FCI".format(self.model_name, basis_size)
         # store ACF data to csv format
-        df.to_csv(self.model_name+".csv", index=False)
+        df.to_csv(file_name+".csv", index=False)
 
         # store ACF data in autospec format
-        with open(self.name+".txt", 'w') as file:
+        with open(file_name+".txt", 'w') as file:
             file.write('#    time[fs]         Re(autocorrel)     Im(autocorrel)     Abs(autocorrel)\n')
             tmp = df.to_records(index=False)
             for t, Re, Im, Abs in tmp:
@@ -496,6 +497,43 @@ class vibronic_model_hamiltonian(object):
         population /= np.einsum('xn,xn->', CI_op_conj, CI_op)
         return population
 
+    def cal_ACF(self, CI_op, T_args, basis_size, b, E_tdm):
+        """
+        calculate ACF from CI and T amplitudes
+        """
+        T_dagger = np.conj(T_args)
+        def resolve_T():
+            """
+            resolve T in H.O. basis
+            """
+            T_matrix = np.zeros([basis_size, basis_size, basis_size, basis_size], dtype=complex)
+            for m_1,m_2, n_1, n_2 in it.product(range(basis_size), repeat=4):
+                if m_1 == n_1 - 1 and m_2 == n_2:
+                    T_matrix[m_1, m_2, n_1, n_2] = -T_dagger[0] * np.sqrt(n_1)
+                elif m_1 == n_1 and m_2 == n_2-1:
+                    T_matrix[m_1, m_2, n_1, n_2] = -T_dagger[1] * np.sqrt(n_2)
+                else:
+                    pass
+
+            return T_matrix.reshape(basis_size**2, basis_size**2)
+
+        # Resolve T in H.O. basis
+        T_in_HO = resolve_T()
+        # Diagonalize T matrix
+        E, V = np.linalg.eig(T_in_HO)
+        # evaluate matrix exponential in HO.basis
+        exp_T_in_HO = np.diag(np.exp(E))
+        exp_T_in_HO = np.dot(V, np.dot(exp_T_in_HO, V.conj().T))
+
+        # evaluate Z by matrix product e^-T^dagger * C
+        Z_matrix = np.einsum('mn,xn->xm', exp_T_in_HO, CI_op)
+
+        # calculate ACF from Z
+        U = Z_matrix[:,0]
+        ACF = np.einsum('a,a->', E_tdm, U) *  E_tdm[b]
+
+        return ACF
+
 
     def time_integration(self, t_final, num_steps, basis_size, compare_with_ED=False):
         """
@@ -516,6 +554,7 @@ class vibronic_model_hamiltonian(object):
         # merge the vibrational dimensions
         C = C.reshape(A, A, basis_size**N)
         # print("shape of C: {:}".format(C[0,:].shape))
+        ACF = np.zeros(num_steps, dtype=complex)
 
         for b in range(A):
             pop_list = []
@@ -531,7 +570,11 @@ class vibronic_model_hamiltonian(object):
                 # step 3: calcuate the state population from C in H.O. basis
                 pop = self.cal_state_pop(C[b,: ], b)
                 pop_list.append(pop)
-                # step 4: update T and C
+
+                # step 4: calcuate ACF
+                ACF[i] += self.cal_ACF(C[b,: ], T[b, :], basis_size, b, self.E_tdm)
+
+                # step 5: update T and C
                 T[b,: ] -= dT * 1j * self.unit * dtau
                 C[b,: ] -= dC * 1j * self.unit * dtau
                 if i % 100 == 0:
@@ -545,6 +588,25 @@ class vibronic_model_hamiltonian(object):
             df = pd.DataFrame(pop_dic)
             name = "{:}_state_pop_for_surface_{:}_{:d}_basis_per_mode_from_VECC.csv".format(self.model_name, b,  basis_size)
             df.to_csv(name, index=False)
+
+        # store ACF data
+        data = {'time': time, 'Re': ACF.real, 'Im': ACF.imag, 'Abs': abs(ACF)}
+        df = pd.DataFrame(data)
+
+        file_name = "ACF_{:}_VECC_{:}_basis_per_mode".format(self.model_name, basis_size)
+        # store ACF data to csv format
+        df.to_csv(file_name+".csv", index=False)
+        # store ACF data in autospec format
+        with open(file_name+".txt", 'w') as file:
+            file.write('#    time[fs]         Re(autocorrel)     Im(autocorrel)     Abs(autocorrel)\n')
+            tmp = df.to_records(index=False)
+            for t, Re, Im, Abs in tmp:
+                x1 = '{:.{}f}'.format(t, 8)
+                x2, x3, x4 = ['{:.{}f}'.format(e, 14) for e in (Re, Im, Abs)]
+                string = '{:>15} {:>22} {:>18} {:>18}'.format(x1, x2, x3, x4)
+                file.write(string+'\n')
+
+
 
 
         return
