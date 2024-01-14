@@ -18,6 +18,7 @@ import pstats
 import scipy
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
+from scipy.linalg import eig
 import numpy as np
 import matplotlib as mpl; mpl.use('pdf')
 import matplotlib.pyplot as plt
@@ -509,9 +510,9 @@ class vibronic_model_hamiltonian(object):
             T_matrix = np.zeros([basis_size, basis_size, basis_size, basis_size], dtype=complex)
             for m_1,m_2, n_1, n_2 in it.product(range(basis_size), repeat=4):
                 if m_1 == n_1 - 1 and m_2 == n_2:
-                    T_matrix[m_1, m_2, n_1, n_2] = T_dagger[0] * np.sqrt(n_1)
+                    T_matrix[m_1, n_2, m_1, n_2] = T_dagger[0] * np.sqrt(n_1)
                 elif m_1 == n_1 and m_2 == n_2-1:
-                    T_matrix[m_1, m_2, n_1, n_2] = T_dagger[1] * np.sqrt(n_2)
+                    T_matrix[m_1, n_2, m_1, n_2] = T_dagger[1] * np.sqrt(n_2)
                 else:
                     pass
 
@@ -522,17 +523,20 @@ class vibronic_model_hamiltonian(object):
         T_in_HO_negative = -T_in_HO.copy()
         # evaluate e^+T_dagger
         # Diagonalize T matrix
-        E, V = np.linalg.eig(T_in_HO)
+        E, L, R = eig(T_in_HO, left=True)
+        # assert np.allclose(np.dot(L,R), np.eye(basis_size**2))
         # evaluate matrix exponential in HO.basis
         exp_T_in_HO = np.diag(np.exp(E))
-        exp_T_in_HO = np.dot(V, np.dot(exp_T_in_HO, V.conj()))
+        exp_T_in_HO = np.dot(R, np.dot(exp_T_in_HO, L))
 
         # evaluate e^-T_dagger
         # Diagonalize T matrix
-        E, V = np.linalg.eig(T_in_HO_negative)
+        E, L, R = eig(T_in_HO_negative, left=True)
+        # assert np.allclose(np.dot(L,R), np.eye(basis_size**2))
+
         # evaluate matrix exponential in HO.basis
         exp_T_in_HO_negative = np.diag(np.exp(E))
-        exp_T_in_HO_negative = np.dot(V, np.dot(exp_T_in_HO_negative, V.conj()))
+        exp_T_in_HO_negative = np.dot(R, np.dot(exp_T_in_HO_negative, L))
 
         # evaluate Z by matrix product (e^-T^dagger * C * e^+T_dagger) similarity transform
         Z_matrix = np.einsum('mn,xn,mv->xv', exp_T_in_HO_negative, CI_op, exp_T_in_HO)
@@ -585,6 +589,7 @@ class vibronic_model_hamiltonian(object):
                 # step 5: update T and C
                 T[b,: ] -= dT * 1j * self.unit * dtau
                 C[b,: ] -= dC * 1j * self.unit * dtau
+
                 if i % 100 == 0:
                     print("At t= {:.4f} fs, state polution for state {:d}:\n{:}".format(dtau * i, b, pop))
             # store state population data
