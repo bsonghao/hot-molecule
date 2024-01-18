@@ -508,7 +508,7 @@ class vibronic_model_hamiltonian(object):
             resolve T in H.O. basis
             """
             T_matrix = np.zeros([basis_size, basis_size, basis_size, basis_size], dtype=complex)
-            for m_1,m_2, n_1, n_2 in it.product(range(basis_size), repeat=4):
+            for m_1, m_2, n_1, n_2 in it.product(range(basis_size), repeat=4):
                 if m_1 == n_1 - 1 and m_2 == n_2:
                     T_matrix[m_1, m_2, n_1, n_2] = T_dagger[0] * np.sqrt(n_1)
                 elif m_1 == n_1 and m_2 == n_2-1:
@@ -555,7 +555,7 @@ class vibronic_model_hamiltonian(object):
         return ACF
 
 
-    def time_integration(self, t_final, num_steps, basis_size, compare_with_ED=False):
+    def time_integration(self, t_final, num_steps, basis_size, net_excitation, compare_with_ED=False):
         """
         perform time integration
         t_final: time range of the integration
@@ -573,6 +573,13 @@ class vibronic_model_hamiltonian(object):
                 C[x, y, 0, 0] = 1
         # merge the vibrational dimensions
         C = C.reshape(A, A, basis_size**N)
+
+        # define projector to restrict the level of the net excitation
+        proj = np.zeros((basis_size, basis_size), dtype=complex)
+        for i, j in it.product(range(basis_size), repeat=2):
+            if i + j <= net_excitation:
+                proj[i, j] = 1
+        proj = proj.reshape(basis_size**N)
         # print("shape of C: {:}".format(C[0,:].shape))
         ACF = np.zeros(num_steps, dtype=complex)
 
@@ -586,13 +593,15 @@ class vibronic_model_hamiltonian(object):
                     G_args = self.H
                     dT = 0
                 # step 2: resolve the similarity transform Hamiltonian and CI operator in finite H.O. basis and calculate dC
-                dC = self.resolve_G(G_args, C[b,: ], basis_size)
+                # project the CI operator on the truncated excitation level
+                CI_op = np.einsum('xn,n->xn', C[b, : ], proj)
+                dC = self.resolve_G(G_args, CI_op, basis_size)
                 # step 3: calcuate the state population from C in H.O. basis
-                pop = self.cal_state_pop(C[b,: ], b)
+                pop = self.cal_state_pop(CI_op, b)
                 pop_list.append(pop)
 
                 # step 4: calcuate ACF
-                ACF[i] += self.cal_ACF(C[b,: ], T[b, :], basis_size, b, self.E_tdm)
+                ACF[i] += self.cal_ACF(CI_op, T[b, :], basis_size, b, self.E_tdm)
                 # step 5: update T and C
                 T[b,: ] -= dT * 1j * self.unit * dtau
                 C[b,: ] -= dC * 1j * self.unit * dtau

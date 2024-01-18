@@ -67,10 +67,10 @@ def main():
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(model, name, truncation_order=1)
-    # model.construct_full_Hamiltonian_in_HO_basis(basis_size=40)
-    # model.calculate_state_pop_from_FCI(time=np.linspace(0,100,10000), basis_size=40)
-    # model.calculate_ACF_from_FCI(time=np.linspace(0,100,10001), basis_size=40)
-    model.time_integration(t_final=100, num_steps=10001, basis_size=2, compare_with_ED=False)
+    # model.construct_full_Hamiltonian_in_HO_basis(basis_size=80)
+    # model.calculate_state_pop_from_FCI(time=np.linspace(0,100,10000), basis_size=80)
+    # model.calculate_ACF_from_FCI(time=np.linspace(0,100,10001), basis_size=80)
+    model.time_integration(t_final=100, num_steps=10001, basis_size=2, compare_with_ED=False, net_excitation=100)
 
 
     return
