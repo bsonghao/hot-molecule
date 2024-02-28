@@ -35,12 +35,13 @@ from project.temporary_trial_solver import new_solve_ivp # import the RK integra
 class vibronic_model_hamiltonian(object):
     """ vibronic model hamiltonian class implement TNOE approach to simulation
     thermal properties of vibronic models. """
-    def __init__(self, model, name, truncation_order, FC=False):
+    def __init__(self, model, name, truncation_order, FC=False, T_2_flag=True):
         """ initialize hamiltonian parameters:
         model: an object the contains parameters of the vibronic model Hamiltonian
         name: name of the vibronic model
         truncation_order: truncation order of the vibronic model Hamiltonian
         GS_energy: ground state energy
+        T_2_flag: Bool to determine wether to turn on T_2 amplitude or not
         """
 
         # initialize the Hamiltonian parameters as object instances
@@ -64,6 +65,9 @@ class vibronic_model_hamiltonian(object):
 
         # Boltzmann constant (eV K-1)
         self.Kb = 8.61733326e-5
+
+        # flag determine wether turn on T2 or not
+        self.T_2_flag = T_2_flag
 
         # initialize the vibronic model Hamiltonian
         # define coefficient tensors
@@ -378,7 +382,7 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def _map_initial_amplitude(self, T_initial=1000):
+    def _map_initial_amplitude(self, T_2_flag=True, T_initial=1000):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
         def map_z0_amplitude(beta):
             """map t_0 amplitude from H.O. partition function"""
@@ -418,24 +422,33 @@ class vibronic_model_hamiltonian(object):
 
             return t_2_new
 
-        N, A = self.N, self.A
+        T_2_flag, N, A = self.T_2_flag, self.N, self.A
         beta_initial = 1. / (self.Kb * T_initial)
 
         # calculation BE occupation number at initial beta
         BE_occ = np.ones(self.N) / (np.ones(self.N) - np.exp(-beta_initial * self.model[VMK.w]))
         log.info("BE occupation number:{:}".format(BE_occ))
 
-        # map initial T amplitudes
         initial_T_amplitude = {}
+        initial_Z_amplitude = {}
+
+        # initialize T amplitudes
         initial_T_amplitude[1] = map_t1_amplitude()
-        initial_T_amplitude[2] = map_t2_amplitude()
+        if T_2_flag:
+            initial_T_amplitude[2] = map_t2_amplitude()
+            initial_Z_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
+        else:
+            initial_Z_amplitude[2] = map_t2_amplitude()
+            initial_T_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
+
+
 
 
         # map initial Z amplitudes
-        initial_Z_amplitude={}
+        # initial_Z_amplitude={}
         initial_Z_amplitude[0] = map_z0_amplitude(beta_initial)
         initial_Z_amplitude[1] = np.zeros([A, A, 2*N])
-        initial_Z_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
+        # initial_Z_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
 
         log.info("### initialize T amplitude ###")
         for block in initial_T_amplitude.keys():
@@ -451,7 +464,7 @@ class vibronic_model_hamiltonian(object):
 
     def sim_trans_H(self, H_args, T_args):
         """calculate similarity transformed Hamiltonian (H{e^S})_connected"""
-        A, N = self.A, self.N
+        T_2_flag, A, N = self.T_2_flag, self.A, self.N
 
         def f_t_0(H, T):
             """return residue R_0: (0, 0) block"""
@@ -466,7 +479,8 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('abk,k->ab', H[(0, 1)], T[1])
 
             # quadratic
-            R += 0.5 * np.einsum('abkl,kl->ab', H[(0, 2)], T[2])
+            if T_2_flag:
+                R += 0.5 * np.einsum('abkl,kl->ab', H[(0, 2)], T[2])
             R += 0.5 * np.einsum('abkl,k,l->ab', H[(0, 2)], T[1], T[1])
 
             return R
@@ -498,8 +512,9 @@ class vibronic_model_hamiltonian(object):
             R += np.einsum('abik,k->abi', H[(1, 1)], T[1])
 
             # quadratic
-            R += np.einsum('abk,ki->abi', H[(0, 1)], T[2])
-            R += np.einsum('abkl,k,li->abi', H[(0, 2)], T[1], T[2])
+            if T_2_flag:
+                R += np.einsum('abk,ki->abi', H[(0, 1)], T[2])
+                R += np.einsum('abkl,k,li->abi', H[(0, 2)], T[1], T[2])
 
             return R
 
@@ -513,7 +528,8 @@ class vibronic_model_hamiltonian(object):
             R += H[(1, 1)]
 
             # quadratic
-            R += np.einsum('abjk,ki->abij', H[(0, 2)], T[2])
+            if T_2_flag:
+                R += np.einsum('abjk,ki->abij', H[(0, 2)], T[2])
 
             return R
 
@@ -538,9 +554,10 @@ class vibronic_model_hamiltonian(object):
 
             # quadratic
             R += H[(2, 0)]  # h term
-            R += np.einsum('abkj,ki->abij', H[(1, 1)], T[2])
-            R += np.einsum('abki,kj->abij', H[(1, 1)], T[2])
-            R += np.einsum('abkl,ki,lj->abij', H[(0, 2)], T[2], T[2])
+            if T_2_flag:
+                R += np.einsum('abkj,ki->abij', H[(1, 1)], T[2])
+                R += np.einsum('abki,kj->abij', H[(1, 1)], T[2])
+                R += np.einsum('abkl,ki,lj->abij', H[(0, 2)], T[2], T[2])
 
             return R
 
@@ -614,7 +631,7 @@ class vibronic_model_hamiltonian(object):
 
     def cal_T_Z_residual(self, T_args, Z_args):
         """calculation T and Z residual"""
-        N = self.N
+        T_2_flag, N = self.T_2_flag, self.N
         def cal_T_residual(H_args, Z_args):
             """calculation T residual from Ehrenfest parameterization"""
 
@@ -630,7 +647,10 @@ class vibronic_model_hamiltonian(object):
 
             residual = {}
             residual[1] = cal_dT_1()
-            residual[2] = cal_dT_2()
+            if T_2_flag:
+                residual[2] = cal_dT_2()
+            else:
+                residual[2] = np.zeros(2*N)
 
             return residual
 
@@ -652,7 +672,8 @@ class vibronic_model_hamiltonian(object):
                 R = R_args[2]
                 R -= np.einsum('i,aj->aij', dT_args[1], Z_args[1])
                 R -= np.einsum('j,ai->aij', dT_args[1], Z_args[1])
-                R -= np.einsum('ij,a->aij', dT_args[2], Z_args[0])
+                if T_2_flag:
+                    R -= np.einsum('ij,a->aij', dT_args[2], Z_args[0])
                 return R
 
             residual = {}
@@ -673,7 +694,7 @@ class vibronic_model_hamiltonian(object):
         return t_residual, z_residual
 
 
-    def TFCC_integration(self, output_path, T_initial, T_final, N_step, debug_flag=False):
+    def TFCC_integration(self, output_path, T_initial, T_final, N_step, debug_flag=False, T_2_flag=True):
         """
         conduct TFCC imaginary time integration to calculation thermal
         properties
@@ -686,7 +707,7 @@ class vibronic_model_hamiltonian(object):
         """
         A, N = self.A, self.N
         # map initial T amplitude
-        T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial)
+        T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial, T_2_flag=T_2_flag)
 
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
@@ -902,7 +923,7 @@ class vibronic_model_hamiltonian(object):
         that we are attempting to solve and k can represent multiple time steps to block integrate over
         at the moment we do not do any block integration so k is 1
         """
-        A, N = self.A, self.N
+        T_2_flag, A, N = self.T_2_flag, self.A, self.N
 
         # restore the origin shape of t, z amplitudes from y_tensor
         Z_amplitude, T_amplitude = self._unravel_y_tensor(y_tensor)
@@ -951,7 +972,7 @@ class vibronic_model_hamiltonian(object):
     def _postprocess_rk45_integration_results(self, sol, output_path, debug=False):
         """ extract the relevant information from the integrator object `sol` """
         # number of integration steps accepted by the integrator
-
+        T_2_flag = self.T_2_flag
         log.info(f"RK45 preformed {len(self.partition_function)} integration calculations.")
         log.info(f"RK45 accepted  {len(sol.t)} of those as solutions to the ode's.")
         if debug:
@@ -999,12 +1020,15 @@ class vibronic_model_hamiltonian(object):
                         "chemical entropy": self.chemical_entropy_cc
                         }
         df = pd.DataFrame(thermal_data)
-        df.to_csv(output_path+"{:}_thermal_data_TFCC_RK.csv".format(self.name), index=False)
+        if T_2_flag:
+            df.to_csv(output_path+"{:}_thermal_data_TFCC_RK.csv".format(self.name), index=False)
+        else:
+            df.to_csv(output_path+"{:}_thermal_data_T_1_TFCC_RK.csv".format(self.name), index=False)
 
         return
 
 
-    def rk45_integration(self, output_path, T_initial=0., T_final=10., density=1.0, nof_points=10000, debug_flag=False):
+    def rk45_integration(self, output_path, T_initial=0., T_final=10., density=1.0, nof_points=10000, debug_flag=False, T_2_flag=True):
         """ Runge-Kutta imaginary time integration
 
         This is an advanced integration method with the RK numerical integration
@@ -1019,7 +1043,7 @@ class vibronic_model_hamiltonian(object):
         A, N = self.A, self.N  # to reduce line lengths, for conciseness
 
         # map initial T amplitude from classical limit at hight temperature
-        initial_T, initial_Z = self._map_initial_amplitude(T_initial=T_initial)
+        initial_T, initial_Z = self._map_initial_amplitude(T_initial=T_initial, T_2_flag=self.T_2_flag)
 
         # used for debugging purposes to print out the integration steps every n% of integration
         self.counter = 0
@@ -1048,8 +1072,8 @@ class vibronic_model_hamiltonian(object):
 
 
         # set up tolerance for the RK integrator
-        relative_tolerance = 1e-10
-        absolute_tolerance = 1e-12
+        relative_tolerance = 1e-3
+        absolute_tolerance = 1e-4
         # ------------------------------------------------------------------------
         # call the integrator
         # ------------------------------------------------------------------------
