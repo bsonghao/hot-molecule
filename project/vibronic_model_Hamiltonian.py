@@ -1,10 +1,3 @@
-""" Module Description
-
-Some explanation / notes should go here
-
-"""
-
-
 # system imports
 import os
 from os.path import join
@@ -440,7 +433,9 @@ class vibronic_model_hamiltonian(object):
         else:
             initial_Z_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
             for i in range(A):
-                initial_Z_amplitude[2][i,i,:] += map_t2_amplitude()[i,:]
+                initial_Z_amplitude[2][i, i, :] += map_t2_amplitude()[i,:]
+                # add T1 contribution
+                initial_Z_amplitude[2][i, i, :] += np.einsum('i,j->ij', initial_T_amplitude[1][i,: ], initial_T_amplitude[1][i, :])
             initial_T_amplitude[2] = np.zeros([A, 2*N, 2*N])
 
 
