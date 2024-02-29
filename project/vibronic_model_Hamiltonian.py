@@ -382,7 +382,7 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def _map_initial_amplitude(self, T_2_flag=True, T_initial=1000):
+    def _map_initial_amplitude(self, T_initial=1000):
         """map initial T amplitude from Bose-Einstein statistics at high temperature"""
         def map_z0_amplitude(beta):
             """map t_0 amplitude from H.O. partition function"""
@@ -438,8 +438,10 @@ class vibronic_model_hamiltonian(object):
             initial_T_amplitude[2] = map_t2_amplitude()
             initial_Z_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
         else:
-            initial_Z_amplitude[2] = map_t2_amplitude()
-            initial_T_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
+            initial_Z_amplitude[2] = np.zeros([A, A, 2*N, 2*N])
+            for i in range(A):
+                initial_Z_amplitude[2][i,i,:] += map_t2_amplitude()[i,:]
+            initial_T_amplitude[2] = np.zeros([A, 2*N, 2*N])
 
 
 
@@ -707,7 +709,7 @@ class vibronic_model_hamiltonian(object):
         """
         A, N = self.A, self.N
         # map initial T amplitude
-        T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial, T_2_flag=T_2_flag)
+        T_amplitude, Z_amplitude = self._map_initial_amplitude(T_initial=T_initial)
 
         beta_initial = 1. / (self.Kb * T_initial)
         beta_final = 1. / (self.Kb * T_final)
@@ -1043,7 +1045,7 @@ class vibronic_model_hamiltonian(object):
         A, N = self.A, self.N  # to reduce line lengths, for conciseness
 
         # map initial T amplitude from classical limit at hight temperature
-        initial_T, initial_Z = self._map_initial_amplitude(T_initial=T_initial, T_2_flag=self.T_2_flag)
+        initial_T, initial_Z = self._map_initial_amplitude(T_initial=T_initial)
 
         # used for debugging purposes to print out the integration steps every n% of integration
         self.counter = 0
