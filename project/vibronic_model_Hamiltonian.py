@@ -708,6 +708,7 @@ class vibronic_model_hamiltonian(object):
             DM += np.einsum('p,yq->ypq', T_args[1], Z_args[1])
             DM += np.einsum('q,yp->ypq', T_args[1], Z_args[1])
             DM += np.einsum('pq,y->ypq', T_args[2], Z_args[0])
+            DM += np.einsum('p,q,y->ypq', T_args[1], T_args[1], Z_args[0])
             return DM
 
         DM_args[1] = cal_DM1() # calculate 1-RDM
@@ -748,14 +749,14 @@ class vibronic_model_hamiltonian(object):
         return q_avg
 
 
-    def cal_q_square_avg(self, PDM_args, w):
+    def cal_q_square_avg(self, PDM_args, z_0, w):
         """calcuate thermal averge of q^2 from physical density matrices """
         N = self.N
         q_square_avg = np.zeros(N)
         q_square_avg += 0.5 * np.diag(PDM_args[(2, 0)][w,: ])
         q_square_avg += 0.5 * np.diag(PDM_args[(0, 2)][w,: ])
         q_square_avg += np.diag(PDM_args[(1, 1)][w,: ])
-        q_square_avg += 0.5
+        q_square_avg += 0.5 * z_0[w]
 
         return  q_square_avg
 
@@ -767,7 +768,7 @@ class vibronic_model_hamiltonian(object):
         PRDM = self.trans_DM(BRDM)
         # step 3: calcuate q ad q^2 average (for w electronic state)
         q_avg = self.cal_q_avg(PRDM, w)
-        q_square_avg = self.cal_q_square_avg(PRDM, w)
+        q_square_avg = self.cal_q_square_avg(PRDM, Z_args[0], w)
 
         # step 4: calcuate variance of q from <q> and <q^2>
         # variance = q_square_avg - q_avg**2
