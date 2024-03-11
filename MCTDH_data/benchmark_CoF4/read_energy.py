@@ -47,7 +47,8 @@ class read_energy(object):
                     # print(data[i])
                     energy_data += data[i].split()
 
-        print("list of energy eigenvalue:{:}".format(energy_data))
+        print("list of energy eigenvalue:\n{:}".format(energy_data))
+        print("Total number of state:{:d}".format(len(energy_data)))
         # extract energy data from those lines
         energy_data_dic={"Energy(ev)" : energy_data}
 
