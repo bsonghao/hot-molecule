@@ -90,7 +90,7 @@ def main():
     # assert np.allclose(model[VMK.G2], np.transpose(model[VMK.G2], (1, 0, 3, 2)))
 
     # initialize the Hamiltonian
-    model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False, T_2_flag=False)
+    model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False, T_2_flag=True)
     # sys.exit(0)
     # calculate thermal properties using the sum over states method
     # model.sum_over_states(output_path=outputdir, basis_size=80, T_initial=2000, T_final=10, N_step=500)
