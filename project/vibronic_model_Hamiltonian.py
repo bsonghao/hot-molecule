@@ -222,6 +222,79 @@ class vibronic_model_hamiltonian(object):
             energy = sum(E * np.exp(-E / (self.Kb * T))) / Z
             return energy
 
+
+        def Cal_q_avg_sos(T, Z):
+            """calcuation <q> from sum over state"""
+            q_avg = np.zeros(N)
+            Boltzmann_factor = np.exp(-E/(self.Kb * T))
+            # calcuate <m|q|n>
+            q_1_mn = np.zeros([A, basis_size, basis_size, A, basis_size, basis_size])
+            q_2_mn = np.zeros([A, basis_size, basis_size, A, basis_size, basis_size])
+            factor = 1. / np.sqrt(2)
+
+            # resole q operator in H.O. basis
+            for x in range(A):
+                for a_1, a_2, b_1, b_2 in it.product(range(basis_size), repeat=4):
+                    if a_1 == b_1+1 and a_2 == b_2:
+                        q_1_mn[x, a_1, a_2, x, b_1, b_2] = factor * np.sqrt(b_1+1)
+                    if a_1 == b_1-1 and a_2 == b_2:
+                        q_1_mn[x, a_1, a_2, x, b_1, b_2] = factor * np.sqrt(b_1)
+                    if a_1 == b_1 and a_2 == b_2+1:
+                        q_2_mn[x, a_1, a_2, x, b_1, b_2] = factor * np.sqrt(b_2+1)
+                    if a_1 == b_1 and a_2 == b_2-1:
+                        q_2_mn[x, a_1, a_2, x, b_1, b_2] = factor * np.sqrt(b_2)
+
+            # tansform to eigen basis
+            q_1_mn = q_1_mn.reshape(A*basis_size**N, A*basis_size**N)
+            q_2_mn = q_2_mn.reshape(A*basis_size**N, A*basis_size**N)
+            q_1_lambda = np.einsum('ml,mn,nl->l', V, q_1_mn, V)
+            q_2_lambda = np.einsum('ml,mn,nl->l', V, q_2_mn, V)
+
+            # calcuation <q> from sum over state
+            q_avg[0] = sum(Boltzmann_factor * q_1_lambda) / Z
+            q_avg[1] = sum(Boltzmann_factor * q_2_lambda) / Z
+
+            return q_avg
+
+        def Cal_q_square_avg_sos(T, Z):
+            """calculate <q^2> from sum over states"""
+            q_square_avg = np.zeros(N)
+            Boltzmann_factor = np.exp(-E/(self.Kb * T))
+
+            # calcuate <m|q^2|n>
+            q_square_1_mn = np.zeros([A, basis_size, basis_size, A, basis_size, basis_size])
+            q_square_2_mn = np.zeros([A, basis_size, basis_size, A, basis_size, basis_size])
+
+            # resole q^2 operator in H.O. basis
+            for x in range(A):
+                for a_1, a_2, b_1, b_2 in it.product(range(basis_size), repeat=4):
+                    if a_1 == b_1 and a_2 == b_2:
+                        q_square_1_mn[x, a_1, a_2, x, b_1, b_2] = 0.5
+                        q_square_1_mn[x, a_1, a_2, x, b_1, b_2] += b_1
+                        q_square_2_mn[x, a_1, a_2, x, b_1, b_2] = 0.5
+                        q_square_2_mn[x, a_1, a_2, x, b_1, b_2] += b_2
+                    if a_1 == b_1+2 and a_2 == b_2:
+                        q_square_1_mn[x, a_1, a_2, x, b_1, b_2] = 0.5*np.sqrt(b_1+1)*np.sqrt(b_1+2)
+                    if a_1 == b_1 and a_2 == b_2+2:
+                        q_square_2_mn[x, a_1, a_2, x, b_1, b_2] = 0.5*np.sqrt(b_2+1)*np.sqrt(b_2+2)
+                    if a_1 == b_1-2 and a_2 == b_2:
+                        q_square_1_mn[x, a_1, a_2, x, b_1, b_2] = 0.5*np.sqrt(b_1)*np.sqrt(b_1-1)
+                    if a_1 == b_1 and a_2 == b_2-2:
+                        q_square_2_mn[x, a_1, a_2, x, b_1, b_2] = 0.5*np.sqrt(b_2)*np.sqrt(b_2-1)
+
+
+            # tansform to eigen basis
+            q_square_1_mn = q_square_1_mn.reshape(A*basis_size**N, A*basis_size**N)
+            q_square_2_mn = q_square_2_mn.reshape(A*basis_size**N, A*basis_size**N)
+            q_square_1_lambda = np.einsum('ml,mn,nl->l', V, q_square_1_mn, V)
+            q_square_2_lambda = np.einsum('ml,mn,nl->l', V, q_square_2_mn, V)
+
+            # calcuation <q> from sum over state
+            q_square_avg[0] = sum(Boltzmann_factor * q_square_1_lambda) / Z
+            q_square_avg[1] = sum(Boltzmann_factor * q_square_2_lambda) / Z
+
+            return q_square_avg
+
         log.info("### Start sum over state calculation! ###")
 
         if compare_with_TNOE:
@@ -261,6 +334,18 @@ class vibronic_model_hamiltonian(object):
             tau = 1. / (self.Kb * T)
             chemical_entropy[i] = self.cal_chemical_entropy(tau, thermal_internal_energy[i], free_energy[i])
 
+        # calculate q variance
+        q_variance = np.zeros([len(T_grid), N])
+        for i, T in enumerate(T_grid):
+            # calcuate <q> at temperature T
+            q_avg = Cal_q_avg_sos(T, partition_function[i])
+            # calculate <q^2>  at temperature T
+            q_square_avg = Cal_q_square_avg_sos(T, partition_function[i])
+            # calcuation q variance a temperature T
+            X = q_square_avg - q_avg**2
+            q_variance[i,: ] += X
+
+
         # store thermal data
         thermal_data = {
                         "T(K)": T_grid,
@@ -269,6 +354,10 @@ class vibronic_model_hamiltonian(object):
                         "free energy": free_energy,
                         "chemical entropy": chemical_entropy
                         }
+        for i in range(N):
+            name = "q variance {:d}".format(i+1)
+            thermal_data[name] = q_variance[ :,i]
+
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"{:}_thermal_data_FCI.csv".format(self.name), index=False)
         log.info("### Sum over state calculation teminated gracefully! ###")
