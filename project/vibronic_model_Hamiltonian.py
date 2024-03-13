@@ -337,6 +337,7 @@ class vibronic_model_hamiltonian(object):
         # calculate q variance
         q_variance = np.zeros([len(T_grid), N])
         for i, T in enumerate(T_grid):
+            log.info("calcuation q variance at T {:.3f} K".format(T))
             # calcuate <q> at temperature T
             q_avg = Cal_q_avg_sos(T, partition_function[i])
             # calculate <q^2>  at temperature T
@@ -344,6 +345,10 @@ class vibronic_model_hamiltonian(object):
             # calcuation q variance a temperature T
             X = q_square_avg - q_avg**2
             q_variance[i,: ] += X
+
+            log.info("q variance: {:}".format(X))
+            log.info("<q>:{:}".format(q_avg))
+            log.info("<q^2>:{:}".format(q_square_avg))
 
 
         # store thermal data

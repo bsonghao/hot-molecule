@@ -93,7 +93,7 @@ def main():
     model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False, T_2_flag=True)
     # sys.exit(0)
     # calculate thermal properties using the sum over states method
-    model.sum_over_states(output_path=outputdir, basis_size=80, T_initial=2000, T_final=30, N_step=500)
+    model.sum_over_states(output_path=outputdir, basis_size=20, T_initial=2000, T_final=30, N_step=500)
     sys.exit(0)
     # Bogoliubov transform the Hamiltonian
     model.thermal_field_transform(T_ref=2e3)
