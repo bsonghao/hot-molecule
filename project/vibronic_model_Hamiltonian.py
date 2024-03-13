@@ -119,7 +119,7 @@ class vibronic_model_hamiltonian(object):
                 for a, b in it.product(range(self.A), repeat=2):
                     log.info("surface ({:}, {:}):\n{:}".format(a, b, self.H[rank][a, b, :]))
             else:
-                log.info(self.H[rank])
+                log.info("\n{:}".format(self.H[rank]))
 
         # check hermicity of the Hamiltonian
         # constant term keys
@@ -335,16 +335,21 @@ class vibronic_model_hamiltonian(object):
             chemical_entropy[i] = self.cal_chemical_entropy(tau, thermal_internal_energy[i], free_energy[i])
 
         # calculate q variance
-        q_variance = np.zeros([len(T_grid), N])
+        Q_variance = np.zeros([len(T_grid), N])
+        Q_avg = np.zeros([len(T_grid), N])
+        Q_square_avg = np.zeros([len(T_grid), N])
+
         for i, T in enumerate(T_grid):
             log.info("calcuation q variance at T {:.3f} K".format(T))
             # calcuate <q> at temperature T
             q_avg = Cal_q_avg_sos(T, partition_function[i])
+            Q_avg[i, :] += q_avg
             # calculate <q^2>  at temperature T
             q_square_avg = Cal_q_square_avg_sos(T, partition_function[i])
+            Q_square_avg[i, :] += q_square_avg
             # calcuation q variance a temperature T
             X = q_square_avg - q_avg**2
-            q_variance[i,: ] += X
+            Q_variance[i,: ] += X
 
             log.info("q variance: {:}".format(X))
             log.info("<q>:{:}".format(q_avg))
@@ -361,7 +366,15 @@ class vibronic_model_hamiltonian(object):
                         }
         for i in range(N):
             name = "q variance {:d}".format(i+1)
-            thermal_data[name] = q_variance[ :,i]
+            thermal_data[name] = Q_variance[ :,i]
+
+        for i in range(N):
+            name = "q avg {:d}".format(i+1)
+            thermal_data[name] = Q_avg[ :,i]
+
+        for i in range(N):
+            name = "q square avg {:d}".format(i+1)
+            thermal_data[name] = Q_square_avg[ :,i]
 
         df = pd.DataFrame(thermal_data)
         df.to_csv(output_path+"{:}_thermal_data_FCI.csv".format(self.name), index=False)
@@ -722,7 +735,7 @@ class vibronic_model_hamiltonian(object):
 
     def cal_T_Z_residual(self, T_args, Z_args):
         """calculation T and Z residual"""
-        T_2_flag, N = self.T_2_flag, self.N
+        T_2_flag, FC_flag, A,  N = self.T_2_flag, self.FC, self.A, self.N
         def cal_T_residual(H_args, Z_args):
             """calculation T residual from Ehrenfest parameterization"""
 
@@ -769,8 +782,12 @@ class vibronic_model_hamiltonian(object):
 
             residual = {}
             residual[0] = cal_dZ_0()
-            residual[1] = cal_dZ_I()
-            residual[2] = cal_dZ_IJ()
+            if not self.FC:
+                residual[1] = cal_dZ_I()
+                residual[2] = cal_dZ_IJ()
+            else:
+                residual[1] = np.zeros([A, 2*N])
+                residual[2] = np.zeros([A, 2*N, 2*N])
 
             return residual
         # calculate similarity transfromed Hamiltonian
@@ -805,16 +822,18 @@ class vibronic_model_hamiltonian(object):
             DM += np.einsum('p,q,y->ypq', T_args[1], T_args[1], Z_args[0])
             return DM
 
+        DM_args[0] = Z_args[0]
         DM_args[1] = cal_DM1() # calculate 1-RDM
         DM_args[2] = cal_DM2() # calculate 2-RDM
 
         return DM_args
 
-    def trans_DM(self, DM_args):
+    def trans_DM(self, DM_args, w):
         """transform Bogoliubov density matrices to Physical denisty matrices"""
         c, s = self.cosh_theta, self.sinh_theta
         A, N = self.A, self.N
         PDM_args = {}
+        PDM_args[(0, 0)] = DM_args[0]
         PDM_args[(1, 0)] = np.zeros([A, N])
         PDM_args[(0, 1)] = np.zeros([A, N])
         PDM_args[(1, 1)] = np.zeros([A, N, N])
@@ -826,7 +845,8 @@ class vibronic_model_hamiltonian(object):
             PDM_args[(0, 1)][y, :] += np.einsum('i,i->i', c, DM_args[1][y, :N])
 
             PDM_args[(1, 1)][y, :] += np.einsum('i,j,ij->ij',s, c, DM_args[2][y, N:, :N])
-            PDM_args[(1, 1)][y, :] += np.einsum('i,j,ij->ij',s, s, np.eye(self.N))
+            # if y == w:
+            PDM_args[(1, 1)][y, :] += np.einsum('i,j,ij->ij',s, s, np.eye(self.N)) * DM_args[0][y]
 
             PDM_args[(2, 0)][y, :] += np.einsum('i,j,ij->ij', s, s, DM_args[2][y, N:, N:])
 
@@ -843,14 +863,14 @@ class vibronic_model_hamiltonian(object):
         return q_avg
 
 
-    def cal_q_square_avg(self, PDM_args, z_0, w):
+    def cal_q_square_avg(self, PDM_args, w):
         """calcuate thermal averge of q^2 from physical density matrices """
         N = self.N
         q_square_avg = np.zeros(N)
         q_square_avg += 0.5 * np.diag(PDM_args[(2, 0)][w,: ])
         q_square_avg += 0.5 * np.diag(PDM_args[(0, 2)][w,: ])
         q_square_avg += np.diag(PDM_args[(1, 1)][w,: ])
-        q_square_avg += 0.5 * z_0[w]
+        q_square_avg += 0.5 *  PDM_args[(0, 0)][w]
 
         return  q_square_avg
 
@@ -859,10 +879,10 @@ class vibronic_model_hamiltonian(object):
         # step 1: calcute RDM in Bogoliubov representation
         BRDM = self.cal_reduced_density_matrices(T_args, Z_args)
         # step 2: transform RDM from Bogoliubov representation to Physical representation
-        PRDM = self.trans_DM(BRDM)
+        PRDM = self.trans_DM(BRDM, w)
         # step 3: calcuate q ad q^2 average (for w electronic state)
         q_avg = self.cal_q_avg(PRDM, w)
-        q_square_avg = self.cal_q_square_avg(PRDM, Z_args[0], w)
+        q_square_avg = self.cal_q_square_avg(PRDM, w)
 
         # step 4: calcuate variance of q from <q> and <q^2>
         # variance = q_square_avg - q_avg**2
@@ -1086,6 +1106,10 @@ class vibronic_model_hamiltonian(object):
             z_amplitude_values_string += f'max double   z[2]  amplitude: {abs(Z[2]).max()}\n'
             log.info(z_amplitude_values_string)
 
+            log.info("q avg <q>:{:}".format(self.q_avg))
+            log.info("q square avg <q^2>: {:}".format(self.q_square_avg))
+            log.info("q variance <delta q^2>: {:}".format(self.q_variance))
+
 
             self.last_print = time
             self.last_counter = 0
@@ -1144,7 +1168,11 @@ class vibronic_model_hamiltonian(object):
         # calculate state population
         state_pop = np.diag(Z_amplitude[0]) / Z
         # normalize q variance
-        q_variance = q_square_avg / Z - (q_avg / Z)**2
+        self.q_square_avg = q_square_avg / Z
+        self.q_avg = q_avg / Z
+        self.q_variance = self.q_square_avg - self.q_avg**2
+
+
 
         # flatten the z, t tensors into a 1D array
         delta_y_tensor = self._ravel_y_tensor(Z_residual, T_residual)
@@ -1154,8 +1182,10 @@ class vibronic_model_hamiltonian(object):
         self.internal_energy.append((time, E))
         self.free_energy.append((time, F))
         self.chemical_entropy.append((time, S))
-        self.Q_variance.append((time, q_variance))
+        self.Q_variance.append((time, self.q_variance))
         self.State_pop.append((time, state_pop))
+        self.Q_avg.append((time, self.q_avg))
+        self.Q_square_avg.append((time, self.q_square_avg))
 
         return -delta_y_tensor
 
@@ -1177,6 +1207,9 @@ class vibronic_model_hamiltonian(object):
         self.free_energy_cc = np.zeros_like(self.t_cc)
         self.chemical_entropy_cc = np.zeros_like(self.t_cc)
         self.Q_variance_cc = np.zeros([len(self.t_cc), self.N])
+        self.Q_avg_cc = np.zeros([len(self.t_cc), self.N])
+        self.Q_square_avg_cc = np.zeros([len(self.t_cc), self.N])
+
         self.state_pop_cc = np.zeros([len(self.t_cc), self.A])
 
         # log.info(len(self.C_tau_cc))
@@ -1203,6 +1236,14 @@ class vibronic_model_hamiltonian(object):
         for idx, t in enumerate(sol.t):
             self.Q_variance_cc[idx, :] = C_dic_Q_variance[t]
 
+        C_dic_Q_avg = {c[0]: c[1] for c in self.Q_avg}
+        for idx, t in enumerate(sol.t):
+            self.Q_avg_cc[idx, :] = C_dic_Q_avg[t]
+
+        C_dic_Q_square_avg = {c[0]: c[1] for c in self.Q_square_avg}
+        for idx, t in enumerate(sol.t):
+            self.Q_square_avg_cc[idx, :] = C_dic_Q_square_avg[t]
+
         C_dic_state_pop = {c[0]: c[1] for c in self.State_pop}
         for idx, t in enumerate(sol.t):
             self.state_pop_cc[idx, :] = C_dic_state_pop[t]
@@ -1224,6 +1265,14 @@ class vibronic_model_hamiltonian(object):
         for i in range(self.N):
             name = "q variance {:d}".format(i+1)
             thermal_data[name] = self.Q_variance_cc[:,i]
+
+        for i in range(self.N):
+            name = "q avg {:d}".format(i+1)
+            thermal_data[name] = self.Q_avg_cc[:,i]
+
+        for i in range(self.N):
+            name = "q square avg {:d}".format(i+1)
+            thermal_data[name] = self.Q_square_avg_cc[:,i]
 
         for i in range(self.A):
             name = "state {:d} pop".format(i+1)
@@ -1274,6 +1323,8 @@ class vibronic_model_hamiltonian(object):
         self.chemical_entropy = []
         self.Q_variance = []
         self.State_pop = []
+        self.Q_avg = []
+        self.Q_square_avg = []
 
 
         # prepare the initial y_tensor

@@ -16,7 +16,8 @@ import json
 project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule'))
 sys.path.insert(0, project_dir)
 # inputdir = '/Users/pauliebao/hot-molecule/vibronic_models/'
-inputdir = '/Users/pauliebao/time-dependent-vibrational-electronic-coupled-cluster-theory-for-non-adiabatic-nuclear-dynamics/original_data/vibronic_models/'
+# inputdir = '/Users/pauliebao/time-dependent-vibrational-electronic-coupled-cluster-theory-for-non-adiabatic-nuclear-dynamics/original_data/vibronic_models/'
+inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/test_models/model_on_VECC_paper/'
 outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
@@ -71,7 +72,7 @@ def main():
     """main function that run TNOE simulation"""
     # Read in Hamiltonian model parameters
     # define number of vibrational model
-    name = "low_freq_model_weak_coup_vibronic_linear"
+    name = "low_freq_model_strong_coup_vibronic_linear"
 
     integrator_flag = "RK"
 
@@ -90,14 +91,15 @@ def main():
     # assert np.allclose(model[VMK.G2], np.transpose(model[VMK.G2], (1, 0, 3, 2)))
 
     # initialize the Hamiltonian
-    model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False, T_2_flag=True)
+    model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False, T_2_flag=False)
     # sys.exit(0)
     # calculate thermal properties using the sum over states method
-    model.sum_over_states(output_path=outputdir, basis_size=20, T_initial=2000, T_final=30, N_step=500)
-    sys.exit(0)
+    # model.sum_over_states(output_path=outputdir, basis_size=20, T_initial=2000, T_final=30, N_step=500)
+    # sys.exit(0)
     # Bogoliubov transform the Hamiltonian
     model.thermal_field_transform(T_ref=2e3)
     model.reduce_H_tilde()
+    # sys.exit(0)
     # run TFCC simulation
     if integrator_flag == "Euler":
         model.TFCC_integration(T_initial=1e3, T_final=3e1, N_step=100000, output_path=outputdir) #(primary 1st order Euler method)
