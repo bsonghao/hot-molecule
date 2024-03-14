@@ -300,9 +300,10 @@ class vibronic_model_hamiltonian(object):
         if compare_with_TNOE:
             T_grid = self.temperature_grid
         else:
-            beta_initial = 1. / (T_initial * self.Kb)
-            beta_final = 1. / (T_final * self.Kb)
-            T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N_step))
+            # beta_initial = 1. / (T_initial * self.Kb)
+            # beta_final = 1. / (T_final * self.Kb)
+            # T_grid = 1. / (self.Kb * np.linspace(beta_initial, beta_final, N_step))
+            T_grid = np.linspace(T_initial, T_final, N_step)
         # contruct Hamiltonian in H.O. basis
         H = construct_full_Hamitonian()
         # check Hermicity of the Hamitonian in H. O. basis
