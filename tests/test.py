@@ -15,15 +15,15 @@ import json
 # import the path to the package
 project_dir = abspath(join(dirname(__file__), '/Users/pauliebao/hot-molecule'))
 sys.path.insert(0, project_dir)
-# inputdir = '/Users/pauliebao/hot-molecule/vibronic_models/'
+inputdir = '/Users/pauliebao/hot-molecule/vibronic_models/'
 # inputdir = '/Users/pauliebao/time-dependent-vibrational-electronic-coupled-cluster-theory-for-non-adiabatic-nuclear-dynamics/original_data/vibronic_models/'
-inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/test_models/model_on_VECC_paper/'
+# inputdir = '/Users/pauliebao/hot-molecule/data/vibronic_models/test_models/model_on_VECC_paper/'
 outputdir =  '/Users/pauliebao/hot-molecule/data/'
 
 # local import
 import project
 from project.vibronic_model_Hamiltonian import vibronic_model_hamiltonian
-from project.vibronic import vIO, VMK
+from project.vibronic import vIO, VMK, vIO_wrapper
 
 order_dict = {
     0: "constant",
@@ -32,24 +32,6 @@ order_dict = {
     3: "cubic",
     4: "quartic",
 }
-
-
-def read_in_model(dir, model_name, order):
-    """read in model parameters from MCTDH operator file"""
-    # read in entire model
-    file_name = "{:}{:}.op".format(dir, model_name)
-    raw_model = vIO.read_raw_model_op_file(file_name, highest_order=order, dimension_of_dipole_moments=1)
-    # remove any higher order terms
-    vIO.remove_higher_order_terms(raw_model, highest_order=order)
-    # write new model into the mctdh operator file
-    vIO.write_raw_model_op_file(f"{dir}{model_name}_{order_dict[order]}.op", raw_model, highest_order=order)
-    # read in our specific model
-    path_op = join(inputdir, f"{model_name}_{order_dict[order]}.op")
-    model = vIO.extract_excited_state_model_op(path_op, FC=False, highest_order= order,\
-                    dimension_of_dipole_moments=1)
-    vIO.prepare_model_for_cc_integration(model,order)
-
-    return model
 
 
 def process_data(filename):
@@ -72,13 +54,17 @@ def main():
     """main function that run TNOE simulation"""
     # Read in Hamiltonian model parameters
     # define number of vibrational model
-    name = "low_freq_model_strong_coup_vibronic_linear"
+    # name = "low_freq_model_strong_coup_vibronic_linear"
+    name = "CoF3_mctdh"
 
     integrator_flag = "RK"
 
-    hamiltonian_truncation_order = 1
+    hamiltonian_truncation_order = 2
 
-    model = read_in_model(inputdir, name, order=1)
+    # model = read_in_model(inputdir, name, order=1)
+
+    model = vIO_wrapper.vibronic_input_reader(name, hamiltonian_truncation_order, inputdir)
+
 
     print("number of surfaces:{:}".format(model[VMK.A]))
     print("number of modes:{:}".format(model[VMK.N]))
@@ -91,18 +77,18 @@ def main():
     # assert np.allclose(model[VMK.G2], np.transpose(model[VMK.G2], (1, 0, 3, 2)))
 
     # initialize the Hamiltonian
-    model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False, T_2_flag=False)
+    model = vibronic_model_hamiltonian(model, name, truncation_order=1, FC=False, T_2_flag=True)
     # sys.exit(0)
     # calculate thermal properties using the sum over states method
-    model.sum_over_states(output_path=outputdir, basis_size=40, T_initial=2000, T_final=30, N_step=100)
-    sys.exit(0)
+    # model.sum_over_states(output_path=outputdir, basis_size=40, T_initial=2000, T_final=30, N_step=100)
+    # sys.exit(0)
     # Bogoliubov transform the Hamiltonian
     model.thermal_field_transform(T_ref=2e3)
     model.reduce_H_tilde()
     # sys.exit(0)
     # run TFCC simulation
     if integrator_flag == "Euler":
-        model.TFCC_integration(T_initial=1e3, T_final=3e1, N_step=100000, output_path=outputdir) #(primary 1st order Euler method)
+        model.TFCC_integration(T_initial=1e3, T_final=3e1, N_step=3000, output_path=outputdir) #(primary 1st order Euler method)
     elif integrator_flag == "RK":
         func_string = 'model.rk45_integration(T_initial=1e4, T_final=3e1, nof_points=10000, output_path=outputdir)'
         if True:

@@ -33,8 +33,8 @@ headers = [
     'Electronic transition moments',
     'Magnetic transition moments',
     'Linear Coupling Constants',
-    'Diagonal Quadratic Coupling Constants',
-    'Off_diagonal Quadratic Coupling Constants',
+    'Quadratic Coupling Constants',
+    'Bilinear Coupling Constants',
     'Cubic Coupling Constants',
     'Quartic Coupling Constants',
     'Quintic Coupling Constants',
@@ -78,8 +78,8 @@ def extract_energies(path, memmap):
     energies = np.zeros((A, A))
     for a in range(A):
         list_of_words = lines[a].split()
-        assert list_of_words[0] == f"EH_s{a+1:02}_s{a+1:02}"
-        assert list_of_words[-1] == "ev"
+        assert list_of_words[0] == f"EH_s{a+1:02}_s{a+1:02}", f"{list_of_words=}\nEH_s{a+1:02}_s{a+1:02}"
+        assert list_of_words[-1] == "ev", f"{list_of_words[-1]=}"
         energies[a, a] = list_of_words[2]
 
     return energies, A
@@ -216,6 +216,9 @@ def parse_lines(lines, coupling_terms, order=None):
     if order == 'C1':
         p = parse.compile("C1_s{a1:d}_s{a2:d}_v{j:d}")
         make_index_tuple = lambda r: (r['j']-1, r['a1']-1, r['a2']-1)
+    elif order == 'C1b':  # bilinear
+        p = parse.compile("C1b_s{a1:d}s{a2:d}_v{j1:d}v{j2:d}")
+        make_index_tuple = lambda r: (r['j1']-1, r['j2']-1, r['a1']-1, r['a2']-1)
     elif order == 'C2':
         p = parse.compile("C2_s{a1:d}s{a2:d}_v{j1:d}v{j2:d}")
         make_index_tuple = lambda r: (r['j1']-1, r['j2']-1, r['a1']-1, r['a2']-1)
@@ -245,7 +248,13 @@ def parse_lines(lines, coupling_terms, order=None):
     for line in lines:
         if line is not None:
             r = p.parse(line[0])
-            index_tuple = make_index_tuple(r)
+            assert r is not None, f"Failed to parse\n{line=}\nInstead got {r=}? Line probably doesn't match any parse patterns for {order=}"
+            try:
+                index_tuple = make_index_tuple(r)
+            except TypeError as e:
+                print(r, line)
+                # breakpoint()
+                raise (str(e))
             coupling_terms[index_tuple] = line[1]
 
     return
@@ -342,17 +351,17 @@ def extract_linear_couplings(path, memmap, linear):
 
 def extract_quadratic_couplings(path, memmap, quadratic):
     """calls extract_string_list() with appropriate parameters so as to fill the quadratic coupling term array with values from the *.op file"""
-    idx = headers.index('Diagonal Quadratic Coupling Constants')
+    idx = headers.index('Quadratic Coupling Constants')
     lines = extract_string_list(path, memmap, header_index=idx)
     parse_lines(lines, quadratic, order='C2')
     return
 
 
-def extract_offdiagonal_quadratic_couplings(path, memmap, quadratic):
-    """calls extract_string_list() with appropriate parameters so as to fill the quadratic coupling term array with values from the *.op file"""
-    idx = headers.index('Off_diagonal Quadratic Coupling Constants')
+def extract_bilinear_couplings(path, memmap, quadratic):
+    """calls extract_string_list() with appropriate parameters so as to fill the quadratic/bilinear coupling term array with values from the *.op file"""
+    idx = headers.index('Bilinear Coupling Constants')
     lines = extract_string_list(path, memmap, header_index=idx)
-    parse_lines(lines, quadratic, order='C2')
+    parse_lines(lines, quadratic, order='C1b')
     return
 
 
@@ -441,7 +450,9 @@ def surface_symmetrize_coupling_terms(Modes, States, *coupling_terms):
 
 
 def double_quadratic_terms(number_of_modes, States, quadratic_terms):
-    """If the quadratic terms are symmetric in the modes, or have an upper triangle of all zeros then we multiple all quadratic factors by 2 to account for the 1/2 factor in our mathematical definition. This option leaves the elements as they were, and does not attempt to symmetrize the model."""
+    """If the quadratic terms are symmetric in the modes, or have an upper triangle of all zeros then we multiple all quadratic factors by 2 to account for the 1/2 factor in our mathematical definition.
+    This option leaves the elements as they were, and does not attempt to symmetrize the model.
+    """
 
     upper_triangle_idx = np.triu_indices(number_of_modes, k=1)
 
@@ -454,25 +465,47 @@ def double_quadratic_terms(number_of_modes, States, quadratic_terms):
     else:
         quadratic_terms[:] *= 2.0
 
-def mode_symmetrize_quadratic_terms(number_of_modes, Modes, States, quadratic_terms):
-    """
-    If the quadratic terms are zero in the upper triangle then we copy the
-    lower triangle to the upper triangle and multiply the diagonal terms by 2.
+
+def mode_symmetrize_from_lower_triangle_quadratic_terms(number_of_modes, States, quadratic_terms):
+    """If the quadratic terms are zero in the upper triangle then we copy the lower triangle to the upper triangle and multiply the diagonal terms by 2.
+    This assumes the values are in the lower triangle.
     """
 
-    # note that this overcounts the diagonal by a factor of 2
-    for i, j in it.product(Modes, Modes):
-        quadratic_terms[i, j, ...] += quadratic_terms[j, i, ...]
-
-    # so now we correct for that factor of 2
-    # for i in Modes:
-    #     quadratic_terms[i, i, ...] /= 2.0
-    lower_triangle_idx = np.tril_indices(number_of_modes, k=0)
+    upper_triangle_idx = np.triu_indices(number_of_modes, k=1)
+    lower_triangle_idx = np.tril_indices(number_of_modes, k=-1)
+    diagonal_idx = np.diag_indices(number_of_modes)
 
     for a, b in it.product(States, States):
-        quadratic_terms[(*lower_triangle_idx, a, b)] /= 2.0
+        if not np.all(quadratic_terms[(*upper_triangle_idx, a, b)] == 0.0):
+            raise Exception(
+                f"The upper triangle at a({a}), b({b}) is not all zeros, "
+                "therefore we cannot symmetrize along the modes\n"
+            )
+    else:
+        for a, b in it.product(States, States):
+            quadratic_terms[(*upper_triangle_idx, a, b)] = quadratic_terms[(*lower_triangle_idx, a, b)]
 
-    return  # temporary fix
+
+def mode_symmetrize_from_upper_triangle_quadratic_terms(number_of_modes, States, quadratic_terms):
+    """If the quadratic terms are zero in the upper triangle then we copy the lower triangle to the upper triangle and multiply the diagonal terms by 2.
+    This assumes the values are in the lower triangle.
+    """
+
+    upper_triangle_idx = np.triu_indices(number_of_modes, k=1)
+    lower_triangle_idx = np.tril_indices(number_of_modes, k=-1)
+
+    for a, b in it.product(States, States):
+        if not np.all(quadratic_terms[(*lower_triangle_idx, a, b)] == 0.0):
+            raise Exception(
+                f"The lower triangle at a({a}), b({b}) is not all zeros, "
+                "therefore we cannot symmetrize along the modes\n"
+            )
+    else:
+        for a, b in it.product(States, States):
+            # quadratic_terms[(*lower_triangle_idx, a, b)] = quadratic_terms[(*upper_triangle_idx, a, b)]
+            quadratic_terms[(*reversed(upper_triangle_idx), a, b)] = quadratic_terms[(*upper_triangle_idx, a, b)]
+
+    assert np.allclose(quadratic_terms, np.transpose(quadratic_terms, (1, 0, 2, 3)))
 
 
 def read_model_op_file(
@@ -481,7 +514,7 @@ def read_model_op_file(
         double_quadratic=False,
         symmetrize_quadratic=False,
         highest_order=1,
-        get_transition_dipole_moment=True,
+        get_transition_dipole_moment=False,
         dimension_of_dipole_moments=1
 ):
     """Reads/parses molecule_vibron.op file and returns a dictionary in the standard format defined in the package."""
@@ -561,8 +594,7 @@ def read_model_op_file(
                 extract_linear_couplings(path_file_op, mm, linear)
             if highest_order >= 2:
                 extract_quadratic_couplings(path_file_op, mm, quadratic)
-            if highest_order >= 2:
-                extract_offdiagonal_quadratic_couplings(path_file_op, mm, quadratic)
+                extract_bilinear_couplings(path_file_op, mm, quadratic)
             if highest_order >= 3:
                 extract_cubic_couplings(path_file_op, mm, cubic)
             if highest_order >= 4:
@@ -584,7 +616,7 @@ def read_model_op_file(
         if double_quadratic:
             double_quadratic_terms(N, States, quadratic)
         elif symmetrize_quadratic:
-            mode_symmetrize_quadratic_terms(N, Modes, States, quadratic)
+            mode_symmetrize_from_lower_triangle_quadratic_terms(N, States, quadratic)
         else:
             log.warning("We didn't change the quadratic terms in any way, make sure this was intentional!!!")
 
@@ -593,8 +625,8 @@ def read_model_op_file(
                     VMK.A: A,
                     VMK.E: excitation_energies,
                     VMK.w: frequencies,
-                    VMK.etdm: electronic_dipole_moments,
-                    VMK.mtdm: magnetic_dipole_moments,
+                    # VMK.etdm: electronic_dipole_moments,
+                    # VMK.mtdm: magnetic_dipole_moments,
                     }
 
     if highest_order >= 1:
@@ -607,8 +639,8 @@ def read_model_op_file(
         maximal_dict[VMK.G4] = quartic
 
     # if the arrays only have zeros then we might not need to store them?
-    # return_dict = dict((k, v) for k, v in maximal_dict.items() if not np.all(v == 0))
-    return_dict = maximal_dict
+    return_dict = dict((k, v) for k, v in maximal_dict.items() if not np.all(v == 0))
+
     return return_dict
 
 
@@ -849,10 +881,9 @@ def build_diagonal_quartic_coupling(quartic_terms, A, N, diagonal=False):
         ])
 
 
-def build_parameter_section(diagonal_model, flag_diagonal=False, highest_order = 1):
+def build_parameter_section(diagonal_model, flag_diagonal=False, highest_order=1):
     """Returns a string which defines the `PARAMETER-SECTION` of an .op file"""
-    start = "PARAMETER-SECTION"
-    end = "end-parameter-section"
+    start, end = "PARAMETER-SECTION", "end-parameter-section"
     header_string = "#{:^47}#\n#{:^47}#\n"
 
     A, N = diagonal_model[VMK.A], diagonal_model[VMK.N]
@@ -869,7 +900,8 @@ def build_parameter_section(diagonal_model, flag_diagonal=False, highest_order =
         build_magnetic_moments(diagonal_model),
         header_string.format(headers[4], '-' * 45),
         build_linear_coupling(diagonal_model[VMK.G1], A, N, flag_diagonal),
-        ]
+    ]
+
     if highest_order > 1:
         return_list.append(header_string.format(headers[5], '-' * 45))
         return_list.append(build_diagonal_quadratic_coupling(diagonal_model[VMK.G2], A, N, flag_diagonal))
@@ -1157,9 +1189,8 @@ def build_magnetic_section(model, flag_diagonal=False):
     return string
 
 
-def generate_op_file_data(model, flag_diagonal=False, highest_order=1):
-    """Returns a string formatted for a .op file using information from `model` and r"""
-    end = "end-operator"
+def enforce_proper_keys_are_present_in_model(model, flag_diagonal=False, highest_order=1):
+    """ Force all keys to be present, fill with zeros (from `template_model`) if not present """
 
     from .vibronic_model_io import (
         diagonal_model_zeros_template_json_dict,
@@ -1176,21 +1207,27 @@ def generate_op_file_data(model, flag_diagonal=False, highest_order=1):
 
         # only include keys up to highest order
         if n+1 > highest_order:
-            continue
+            break
 
         if key not in model.keys():
             model[key] = template_model[key]
 
     # also force the dipole moments to exist
-
     for key in [VMK.etdm, VMK.mtdm]:
         if key not in model.keys():
             model[key] = template_model[key]
+
+    return  # model is dictionary, no return needed
+
+
+def generate_op_file_data(model, flag_diagonal=False, highest_order=1):
+    """ Returns a string formatted for a .op file using information from `model` """
+    enforce_proper_keys_are_present_in_model(model, flag_diagonal, highest_order)
 
     return '\n\n\n'.join([
         build_op_section(),
         build_parameter_section(model, flag_diagonal, highest_order=highest_order),
         build_hamiltonian_section(model, flag_diagonal, highest_order=highest_order),
         build_dipole_moments_section(model, flag_diagonal),
-        end,
+        "end-operator",
     ])

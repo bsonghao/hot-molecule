@@ -15,7 +15,7 @@ from numpy import float64 as F64
 from numpy import complex128 as C128
 
 # local imports
-from project.log_conf import log
+from ..log_conf import log
 from .vibronic_model_keys import VibronicModelKeys as VMK
 from . import model_op
 
@@ -86,6 +86,10 @@ def model_zeros_template_json_dict(A, N, highest_order=1):
         if idx + 1 <= highest_order:
             dictionary.update({key: np.zeros(shape[key], dtype=F64)})
 
+    if highest_order > VMK.max_order():
+        e_str = f"VMK supports at most order {VMK.max_order()} coupling terms, not {highest_order=}\n"
+        raise Exception(e_str)
+
     return dictionary
 
 
@@ -105,6 +109,10 @@ def diagonal_model_zeros_template_json_dict(A, N, highest_order=1):
     for idx, key in enumerate(VMK.coupling_list()):
         if idx + 1 <= highest_order:
             dictionary.update({key: np.zeros(shape[key], dtype=F64)})
+
+    if highest_order > VMK.max_order():
+        e_str = f"VMK supports at most order {VMK.max_order()} coupling terms, not {highest_order=}\n"
+        raise Exception(e_str)
 
     return dictionary
 
@@ -713,9 +721,9 @@ def prepare_model_for_cc_integration(model, highest_order):
         key = VMK.key_list()[index]
         if highest_order >= index:
             if key not in model:
-               # A, N = vIO.extract_dimensions_of_model(model)
+                # A, N = vIO.extract_dimensions_of_model(model)
                 A, N = extract_dimensions_of_model(model)
-              #  model[key] = np.zeros(vIO.model_shape_dict(A, N)[key], dtype=float)
+                #  model[key] = np.zeros(vIO.model_shape_dict(A, N)[key], dtype=float)
                 model[key] = np.zeros(model_shape_dict(A, N)[key], dtype=float)
 
             swap_coupling_coefficient_axes(model, coeff_order=index)
@@ -744,7 +752,7 @@ def _generate_quadratic_terms(quadratic_terms, shape, displacement, Modes):
     return
 
 
-def generate_vibronic_model_data(input_parameters=None):
+def generate_vibronic_model_data(input_parameters=None, highest_order=1):
     """redo this one but otherwise its fine returns e,w,l,q filled with appropriate values"""
 
     # default values
@@ -775,7 +783,7 @@ def generate_vibronic_model_data(input_parameters=None):
     shape = model_shape_dict(numStates, numModes)
 
     # assume we are building a coupled model
-    model = model_zeros_template_json_dict(numStates, numModes)
+    model = model_zeros_template_json_dict(numStates, numModes, highest_order=highest_order)
 
     # generate frequencies
     model[VMK.w] = np.linspace(minFreq, maxFreq, num=numModes, endpoint=True, dtype=F64)
@@ -794,14 +802,17 @@ def generate_vibronic_model_data(input_parameters=None):
     l_shift = paramDict['linear_scaling'] / model[VMK.w]
     _generate_linear_terms(model[VMK.G1], shape, l_shift, Modes)
 
-    # TODO - no quadratic terms for the moment - turn back on after further testing
-    # calculate the quadratic displacement
-    # q_shift = np.sqrt(np.outer(frequencies, frequencies)) / paramDict['quadratic_scaling']
-    # _generate_quadratic_terms(q_terms, shape, q_shift, Modes)
+    # TODO - no quadratic terms for the moment
+    if highest_order >= 2:
+        raise Exception('not supported, turn back on after further testing')
+        # calculate the quadratic displacement
+        frequencies = model[VMK.w]
+        q_shift = np.sqrt(np.outer(frequencies, frequencies)) / paramDict['quadratic_scaling']
+        _generate_quadratic_terms(q_terms, shape, q_shift, Modes)
 
     # if we are building a harmonic model then zero out all off-diagonal entries
     if paramDict['diagonal']:
-        d_model = diagonal_model_zeros_template_json_dict(numStates, numModes)
+        d_model = diagonal_model_zeros_template_json_dict(numStates, numModes, highest_order=highest_order)
 
         d_model[VMK.E] = np.diag(model[VMK.E])
         d_model[VMK.etdm] = model[VMK.etdm]
@@ -810,8 +821,10 @@ def generate_vibronic_model_data(input_parameters=None):
 
         for i in Modes:
             d_model[VMK.G1][i, ...] = np.diag(model[VMK.G1][i, ...])
-        for i, j in it.product(Modes, repeat=2):
-            d_model[VMK.G2][i, j, ...] = np.diag(model[VMK.G2][i, j, ...])
+
+        if highest_order >= 2:
+            for i, j in it.product(Modes, repeat=2):
+                d_model[VMK.G2][i, j, ...] = np.diag(model[VMK.G2][i, j, ...])
 
         return d_model
 
@@ -851,14 +864,15 @@ def create_random_diagonal_model():
 # ------------------------------------------------------------------------
 def read_raw_model_op_file(path_file_op, highest_order=2, **kwargs):
     """When you want to "read as written" (RAW) the op file. Data will not be symmetrized."""
-    return model_op.read_model_op_file(
-        path_file_op,
-        surface_symmetrize=False,
-        symmetrize_quadratic=False,
-        double_quadratic=False,
-        highest_order=highest_order,
-        **kwargs
-    )
+
+    if 'surface_symmetrize' not in kwargs:
+        kwargs['surface_symmetrize'] = False
+    if 'symmetrize_quadratic' not in kwargs:
+        kwargs['symmetrize_quadratic'] = False
+    if 'double_quadratic' not in kwargs:
+        kwargs['double_quadratic'] = False
+
+    return model_op.read_model_op_file(path_file_op, highest_order=highest_order, **kwargs,  dimension_of_dipole_moments=3)
 
 
 def read_model_op_file(
@@ -871,12 +885,14 @@ def read_model_op_file(
     **kwargs
 ):
     """Symmetrize both surfaces and modes up to quadratic terms."""
+    if highest_order is not None:
+        kwargs["highest_order"] = highest_order
+
     model = model_op.read_model_op_file(
         path_file_op,
         surface_symmetrize=surface_symmetrize,
         double_quadratic=double_quadratic,
         symmetrize_quadratic=symmetrize_quadratic,
-        highest_order=highest_order,
         **kwargs
     )
 
@@ -910,10 +926,8 @@ def extract_excited_state_model_op(
         FC=FC,
         **kwargs
     )
-    print(model.keys())
     # remove ground state from model and adjust parameter dimensions.
     new_model = model_remove_ground_state(model)
-    print(new_model.keys())
     return new_model
 
 
@@ -962,11 +976,13 @@ def _save_to_JSON(path, dictionary):
     dict_copy = copy.deepcopy(dictionary)
     VMK.change_dictionary_keys_from_enum_members_to_strings(dict_copy)
     """ converts each numpy array to a list so that json can serialize them properly"""
+
     for key, value in list(dict_copy.items()):
         if isinstance(value, (np.ndarray, np.generic)):
             if np.count_nonzero(value) > 0:
-                if key == VMK.transition_dipole_moments.value:
-                    dict_copy[key] = [str(n) for n in value]
+                if key in [VMK.etdm.value, VMK.mtdm.value]:
+                    assert value.shape == (1, dict_copy[VMK.A.value])
+                    dict_copy[key] = [[str(n) for n in value[i, :].tolist()] for i in range(value.shape[0])]
                 else:
                     dict_copy[key] = value.tolist()
             else:
@@ -1020,8 +1036,9 @@ def _load_inplace_from_JSON(path, dictionary):
                 else:
                     # the rest of the model is doubles
                     dictionary[key].fill(0.0)
+
             elif key in [VMK.etdm, VMK.mtdm]:
-                tdm_list = list(map(complex, input_dictionary[key]))
+                tdm_list = [[*map(complex, row)] for row in input_dictionary[key]]
                 dictionary[key][:] = np.array(tdm_list, dtype=C128)
             else:
                 dictionary[key][:] = np.array(input_dictionary[key], dtype=F64)
@@ -1041,7 +1058,7 @@ def _load_from_JSON(path):
             if key in [VMK.etdm, VMK.mtdm]:
                 # the transition dipole moment is complex
                 # the complex numbers are stored as strings in the JSON file
-                value = list(map(complex, value))
+                value = [[*map(complex, row)] for row in value]
                 input_dictionary[key] = np.array(value, dtype=C128)
             else:
                 # the rest of the model is doubles
@@ -1096,9 +1113,7 @@ def load_diagonal_model_from_JSON(path, dictionary=None):
     # no arrays were provided so return newly created arrays after filling them with the appropriate values
     if not bool(dictionary):
         new_model_dict = _load_from_JSON(path)
-
         # TODO - we might want to make sure that none of the values in the dictionary have all zero values or are None
-
         verify_diagonal_model_parameters(new_model_dict)
         return new_model_dict
 
