@@ -1,15 +1,5 @@
-Hot molecule project implement a coupled cluster
-approach to simulated thermal vibronic problem.
+Hot molecule project implement implement the vibrational-electronic thermofield coupled cluster (VE-TFCC) approach that is publish on <a href="https://doi.org/10.1021/acs.jctc.4c00338" target="_blank">J. Chem. Theory Comput.</a>
 
-This approach mainly consistent of two parts:
+![images_large_ct4c00338_0012](https://github.com/user-attachments/assets/62adbd9d-a274-488d-8799-d548f9c81be3)
 
-1. thermal field theory:
-By introducing ancillary space and Bogliubov transformation,
-we could form a thermal field reference state as well as
-bosonic construction operator that is single-reference like.
 
-2. coupled cluster theory:
-On top of the thermal field reference state, we formulation a
-single reference like coupled cluster equation and thermal properties
-could be simulation through imaginary time integration of
-coupled cluster equation of motion
