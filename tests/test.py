@@ -42,14 +42,16 @@ def main():
     dtype=complex)
 
     # temperature of the simulation (K)
-    T = 1
+    T = 100
 
     # initialize the Hamiltonian
     model = vibronic_model_hamiltonian(Freq, LCP, QCP, VE, num_mode, T)
     # run VECC simulation
-    time_CC, ACF_CC = model.VECC_integration(t_final=200, num_steps=20000, CI_flag=False, mix_flag=False, proj_flag=False)
-    # store ACF data
+    time_CC, ACF_CC = model.VECC_integration(t_final=100, num_steps=10000, CI_flag=False, mix_flag=False, proj_flag=False)
     model.store_ACF_data(time_CC, ACF_CC, name="ACF_single_surface_hot_band_T{:}K".format(T))
+    # run exact diagaonalization for benchmark
+    # time_FCI, ACF_FCI = model.FCI_solution(time=np.linspace(0, 100, 1001), basis_size=80)
+    # model.store_ACF_data(time_FCI, ACF_FCI, name="ACF_single_surface_hot_band_T{:}K_FCI".format(T))
 
     return
 

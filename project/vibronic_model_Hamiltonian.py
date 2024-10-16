@@ -14,6 +14,7 @@ from os.path import abspath, join, dirname, basename
 import sys
 import cProfile
 import pstats
+import itertools as it
 
 
 # third party imports
@@ -84,10 +85,6 @@ class vibronic_model_hamiltonian(object):
         # Bogoliubov transform the Hamiltonian
         self.thermal_field_transformation(Temp=self.temperature)
         self.reduce_H_tilde()
-
-        # initialize Hamiltonian in FCI basis
-        model = model_two_mode(self.H[(0, 0)].real, self.H[(1, 0)].real, self.H[(1, 1)].real, self.H[(0, 2)].real)
-        self.H_FCI = model.sos_solution(basis_size=40)
 
         # initialize the vibrational Hamiltonian (for hot band)
         # initialize h_0
@@ -401,8 +398,8 @@ class vibronic_model_hamiltonian(object):
                 R += np.einsum('i,j->ij', H[(1, 0)], T[1])
                 R += np.einsum('j,i->ij', H[(1, 0)], T[1])
 
-            R += np.einsum('kj,ki->ij', H[(1, 1)], T[2])
-            R += np.einsum('ki,kj->ij', H[(1, 1)], T[2])
+            R += np.einsum('jk,ki->ij', H[(1, 1)], T[2])
+            R += np.einsum('ik,kj->ij', H[(1, 1)], T[2])
             if not CI_flag:
                 R += 0.5 * np.einsum('kl,ki,lj->ij', H[(0, 2)], T[2], T[2])
                 R += 0.5 * np.einsum('kl,kj,li->ij', H[(0, 2)], T[2], T[2])
@@ -570,22 +567,36 @@ class vibronic_model_hamiltonian(object):
 
         return time, ACF
 
-    def FCI_solution(self, time):
+    def FCI_solution(self, time, basis_size):
         """ calculate ACF from exact diagonalization of the full Hamiltonian """
+        def cal_boltz_factor():
+            """calculate Boltzmann factor"""
+            energy = np.zeros((basis_size, basis_size), dtype=complex)
+            for m,n in it.product(range(basis_size), repeat=2):
+                energy[m, n] = self.Freq[0]*m + self.Freq[1]*n + 0.5 * sum(self.Freq)
+            energy = energy.reshape(basis_size**self.N)
+            beta = 1. / (self.Kb * self.temperature)
+            factor = np.exp(-beta*energy)
+            factor /= sum(factor)
+            return factor, energy
+
         print('### FCI program start ###')
+        # initialize Hamiltonian in FCI basis
+        model = model_two_mode(self.H[(0, 0)].real, self.H[(1, 0)].real, self.H[(1, 1)].real, self.H[(0, 2)].real)
+        self.H_FCI = model.sos_solution(basis_size=basis_size)
         # check hermicity of Hamitlnian
         assert np.allclose(self.H_FCI, self.H_FCI.transpose())
         # diagonalize the full Hamiltonian
         E, V = np.linalg.eigh(self.H_FCI)
-        print('Energy Eigenvalue')
-        for i in range(10):
-            print(E[i])
-
+        # print('Energy Eigenvalue')
+        # for i in range(10):
+            # print(E[i])
+        Pn, E_0 = cal_boltz_factor()
         # initilize auto correlation function
         ACF = np.zeros_like(time, dtype=complex)
         # compute ACF
-        for n in range(40**self.N):
-            ACF += V[(0, n)] * np.exp(-E[n] * time * 1j) * V[(0, n)].conjugate()
+        for n,l in it.product(range(basis_size**self.N), repeat=2):
+            ACF += Pn[n]*V[(n, l)] * np.exp(-(E[l]-E_0[n]) * time * 1j) * V[(n, l)].conjugate()
 
         # normalize ACF
         ACF /= ACF[0]
