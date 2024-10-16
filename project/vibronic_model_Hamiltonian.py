@@ -21,7 +21,7 @@ import scipy
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 import numpy as np
-import matplotlib as mpl; mpl.use('pdf')
+# import matplotlib as mpl; mpl.use('pdf')
 import matplotlib.pyplot as plt
 import parse  # used for loading data files
 import pandas as pd
@@ -38,13 +38,14 @@ from project.two_mode_model import model_two_mode
 class vibronic_model_hamiltonian(object):
     """ vibronic model hamiltonian class implement TF-VECC approach to simulation thermal properties of vibronic models. """
 
-    def __init__(self, freq, LCP, QCP, VE, num_mode):
+    def __init__(self, freq, LCP, QCP, VE, num_mode, temperature):
         """ initialize hamiltonian parameters:
         freq: vibrational frequencies
         LCP: linear coupling_constants
         QCP: quadratic coupling constant
         VE" vertical energy
         num_mode: number of vibration modes
+        temperature: tempuration of the simulation
         """
 
         # initialize the Hamiltonian parameters as object instances
@@ -53,6 +54,7 @@ class vibronic_model_hamiltonian(object):
         self.LCP = LCP
         self.QCP = QCP
         self.VE = VE
+        self.temperature = temperature
 
         # Boltzmann constant (eV K-1)
         self.Kb = 8.61733326e-5
@@ -63,8 +65,8 @@ class vibronic_model_hamiltonian(object):
         # constant
         self.H[(0, 0)] = VE + 0.5 * np.trace(QCP)
         # first order
-        self.H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N)
-        self.H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N)
+        self.H[(1, 0)] = LCP / np.sqrt(2) * np.ones(self.N, dtype=complex)
+        self.H[(0, 1)] = LCP / np.sqrt(2) * np.ones(self.N, dtype=complex)
         # second order
         self.H[(1, 1)] = np.diag(freq)
         self.H[(1, 1)] += QCP
@@ -79,9 +81,59 @@ class vibronic_model_hamiltonian(object):
 
         print("Boltzmann constant: {:} eV K-1".format(self.Kb))
 
+        # Bogoliubov transform the Hamiltonian
+        self.thermal_field_transformation(Temp=self.temperature)
+        self.reduce_H_tilde()
+
         # initialize Hamiltonian in FCI basis
-        model = model_two_mode(self.H[(0, 0)], self.H[(1, 0)], self.H[(1, 1)], self.H[(0, 2)])
+        model = model_two_mode(self.H[(0, 0)].real, self.H[(1, 0)].real, self.H[(1, 1)].real, self.H[(0, 2)].real)
         self.H_FCI = model.sos_solution(basis_size=40)
+
+        # initialize the vibrational Hamiltonian (for hot band)
+        # initialize h_0
+        self.h_0 = {
+                    (0, 0): 0+0j,
+                    (1, 1): np.zeros((self.N, self.N), dtype=complex),
+                }
+
+        # H.O. ground state energy
+        self.h_0[(0, 0)] += 0.5 * sum(freq)
+
+        # frequencies
+        for j in range(self.N):
+            self.h_0[(1, 1)][j, j] += freq[j]
+        # calcuate Bogoliubov transformed h_0
+        self.h_tilde_0 = dict()
+        self.h_tilde_0[(0, 0)] = self.h_0[(0, 0)] + np.einsum('ii,i,i->', self.h_0[(1, 1)], self.sinh_theta, self.sinh_theta)
+
+        self.h_tilde_0[(1, 1)] = {
+        "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.h_0[(1, 1)]),
+        "ab": np.zeros((self.N, self.N), dtype=complex),
+        'ba': np.zeros((self.N, self.N), dtype=complex),
+        "bb": np.einsum('i,j,ji->ij', self.sinh_theta, self.sinh_theta, self.h_0[(1, 1)])
+                   }
+
+        self.h_tilde_0[(2, 0)] = {
+        "aa": np.zeros((self.N, self.N), dtype=complex),
+        "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.h_0[(1, 1)]),
+        "ba": np.einsum('i,j,ji->ij', self.sinh_theta, self.cosh_theta, self.h_0[(1, 1)]),
+        "bb": np.zeros((self.N, self.N), dtype=complex)
+        }
+
+        self.h_tilde_0[(0, 2)] = {
+        "aa": np.zeros((self.N, self.N), dtype=complex),
+        "ab": np.einsum('i,j,ji->ij', self.cosh_theta, self.sinh_theta, self.h_0[(1, 1)]),
+        "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.h_0[(1, 1)]),
+        "bb": np.zeros((self.N, self.N), dtype=complex)
+        }
+        # log.info("h_11 unmerged")
+        # for key in self.h_tilde_0[(1, 1)].keys():
+            # log.info("Block {:}: \n {:}".format(key, self.h_tilde_0[(1, 1)][key]))
+
+        self.h_tilde_0[(1, 1)] = self.merge_quadratic(self.h_tilde_0[(1, 1)])
+        self.h_tilde_0[(2, 0)] = self.merge_quadratic(self.h_tilde_0[(2, 0)])
+        self.h_tilde_0[(0, 2)] = self.merge_quadratic(self.h_tilde_0[(0, 2)])
+
 
         print("### End of Hamiltonian parameters ####")
 
@@ -121,16 +173,17 @@ class vibronic_model_hamiltonian(object):
         self.H_tilde[(2, 0)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(2, 0)]),
                                 "ab": np.einsum('i,j,ij->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
-                                "ba": np.zeros_like(self.H[2, 0]),
+                                "ba": np.einsum('i,j,ji->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(0, 2)]),
                                }
 
         self.H_tilde[(0, 2)] = {
                                 "aa": np.einsum('i,j,ij->ij', self.cosh_theta, self.cosh_theta, self.H[(0, 2)]),
-                                "ab": np.zeros_like(self.H[(0, 2)]),
+                                "ab": np.einsum('i,j,ji->ij', self.cosh_theta, self.sinh_theta, self.H[(1, 1)]),
                                 "ba": np.einsum('i,j,ij->ij', self.sinh_theta, self.cosh_theta, self.H[(1, 1)]),
                                 "bb": np.einsum('i,j,ij->ij', self.sinh_theta, self.sinh_theta, self.H[(2, 0)])
                                }
+
 
         print("###### Bogliubov transformed Hamiltonian ########")
         for rank in self.H_tilde.keys():
@@ -142,39 +195,26 @@ class vibronic_model_hamiltonian(object):
 
         return
 
-    def _map_initial_T_amplitude(self, T_initial):
-        """map initial T amplitude from Bose-Einstein statistics at high temperature"""
-        def map_t1_amplitude():
-            """map t_1 amplitude from linear coupling constant"""
-            # initialize t1 amplitude
-            t_1 = np.zeros(2 * N)
-            t_1[:N] += self.LCP / np.sqrt(2) / (2 * self.cosh_theta)
-            t_1[N:] += self.LCP / np.sqrt(2) / (2 * self.sinh_theta)
-
-            return t_1
-
-        def map_t2_amplitude(RDM_2, t1):
-            """map t_2 amplitude from cumulant expression of 2-RDM"""
-            # initialize t2 amplitude
-            t_2 = np.zeros([2 * N, 2 * N])
-            t_2[N:, N:] += RDM_2
-            t_2 -= np.einsum('p,q->pq', t1, t1)
-
-            return t_2
-
+    def merge_linear(self, input_tensor):
+        """ merge linear terms of the Hamiltonian """
         N = self.N
-        beta_initial = 1. / (self.Kb * T_initial)
-        # calculate two particle density matrice from Bose-Einstein statistics
-        two_RDM = np.diag(np.exp(beta_initial * self.Freq))
+        output_tensor = np.zeros(2 * N, dtype=complex)
+        output_tensor[:N] = input_tensor['a'].copy()
+        output_tensor[N:] = input_tensor['b'].copy()
 
-        initial_T_amplitude = {}
-        initial_T_amplitude["t1"] = map_t1_amplitude()
-        initial_T_amplitude["t2"] = map_t2_amplitude(two_RDM, initial_T_amplitude['t1'])
+        return output_tensor
 
-        print("initial single T amplitude:\n{:}".format(initial_T_amplitude["t1"]))
-        print("initial double T amplitude:\n{:}".format(initial_T_amplitude["t2"]))
+    def merge_quadratic(self, input_tensor):
+        """ merge quadratic_terms of the Hamiltonian """
+        N = self.N
+        output_tensor = np.zeros([2*N,  2*N], dtype=complex)
+        output_tensor[:N, :N] = input_tensor["aa"].copy()
+        output_tensor[:N, N:] = input_tensor["ab"].copy()
+        output_tensor[N:, :N] = input_tensor["ba"].copy()
+        output_tensor[N:, N:] = input_tensor["bb"].copy()
 
-        return initial_T_amplitude
+        return output_tensor
+
 
     def reduce_H_tilde(self):
         """merge the a, b blocks of the Bogliubov transformed Hamiltonian into on tensor"""
@@ -184,30 +224,13 @@ class vibronic_model_hamiltonian(object):
             (0, 0): self.H_tilde[(0, 0)],
             }
 
-        def merge_linear(input_tensor):
-            """ merge linear terms of the Hamiltonian """
-            output_tensor = np.zeros(2 * N)
-            output_tensor[:N] = input_tensor['a'].copy()
-            output_tensor[N:] = input_tensor['b'].copy()
-
-            return output_tensor
-
-        def merge_quadratic(input_tensor):
-            """ merge quadratic_terms of the Hamiltonian """
-            output_tensor = np.zeros([2 * N, 2 * N])
-            output_tensor[:N, :N] = input_tensor["aa"].copy()
-            output_tensor[:N, N:] = input_tensor["ab"].copy()
-            output_tensor[N:, :N] = input_tensor["ba"].copy()
-            output_tensor[N:, N:] = input_tensor["bb"].copy()
-
-            return output_tensor
 
         # merge linear terms
-        self.H_tilde_reduce[(1, 0)] = merge_linear(self.H_tilde[(1, 0)])
-        self.H_tilde_reduce[(0, 1)] = merge_linear(self.H_tilde[(0, 1)])
-        self.H_tilde_reduce[(1, 1)] = merge_quadratic(self.H_tilde[(1, 1)])
-        self.H_tilde_reduce[(2, 0)] = merge_quadratic(self.H_tilde[(2, 0)])
-        self.H_tilde_reduce[(0, 2)] = merge_quadratic(self.H_tilde[(0, 2)])
+        self.H_tilde_reduce[(1, 0)] = self.merge_linear(self.H_tilde[(1, 0)])
+        self.H_tilde_reduce[(0, 1)] = self.merge_linear(self.H_tilde[(0, 1)])
+        self.H_tilde_reduce[(1, 1)] = self.merge_quadratic(self.H_tilde[(1, 1)])
+        self.H_tilde_reduce[(2, 0)] = self.merge_quadratic(self.H_tilde[(2, 0)])
+        self.H_tilde_reduce[(0, 2)] = self.merge_quadratic(self.H_tilde[(0, 2)])
 
         print("##### Bogliubov transformed (fictitous) Hamiltonian after merge blocks ######")
         for rank in self.H_tilde_reduce.keys():
@@ -216,9 +239,9 @@ class vibronic_model_hamiltonian(object):
         return
 
 
-    def CC_residue(self, H_args, T_args, Z_args=None, CI_flag=False, mix_flag=False, proj_flag=False):
+    def CC_residue(self, H_args, T_args, CI_flag=False, mix_flag=False, proj_flag=False):
         """implement coupled cluster residue equations"""
-        N = self.N
+        N = 2 * self.N
         if proj_flag:
             T_proj = np.conjugate(T_args[1])
         else:
@@ -364,7 +387,6 @@ class vibronic_model_hamiltonian(object):
 
         def f_t_ij(H, T, CI_flag=CI_flag, proj_flag=False, T_proj=None):
             """return residue R_ij"""
-
             # # initialize as zero
             R = np.zeros([N, N], dtype=complex)
 
@@ -406,67 +428,79 @@ class vibronic_model_hamiltonian(object):
                     )
             return R
 
-        if not mix_flag:
-            residue = dict()
+        # similarity transfrom the Hamiltonian
+        sim_h = {}
+        sim_h[(0, 0)] = f_t_0(H_args, T_args)
+        sim_h[(0, 1)] = f_t_I(H_args, T_args)
+        sim_h[(1, 0)] = f_t_i(H_args, T_args)
+        sim_h[(1, 1)] = f_t_Ij(H_args, T_args)
+        sim_h[(0, 2)] = f_t_IJ(H_args, T_args)
+        sim_h[(2, 0)] = f_t_ij(H_args, T_args)
 
-            residue[0] = f_t_0(H_args, T_args)
-            residue[1] = f_t_i(H_args, T_args)
-            residue[2] = f_t_ij(H_args, T_args)
+        return sim_h
 
-            return residue
-        else:
+
+        # if not mix_flag:
+            # residue = dict()
+
+            # residue[0] = f_t_0(H_args, T_args)
+            # residue[1] = f_t_i(H_args, T_args)
+            # residue[2] = f_t_ij(H_args, T_args)
+
+            # return residue
+        # else:
             # similarity transform the Hamiltonian
-            sim_h = {}
-            sim_h[(0, 0)] = f_t_0(H_args, T_args)
-            sim_h[(0, 1)] = f_t_I(H_args, T_args)
-            sim_h[(1, 0)] = f_t_i(H_args, T_args)
-            sim_h[(1, 1)] = f_t_Ij(H_args, T_args)
-            sim_h[(0, 2)] = f_t_IJ(H_args, T_args)
-            sim_h[(2, 0)] = f_t_ij(H_args, T_args)
+            # sim_h = {}
+            # sim_h[(0, 0)] = f_t_0(H_args, T_args)
+            # sim_h[(0, 1)] = f_t_I(H_args, T_args)
+            # sim_h[(1, 0)] = f_t_i(H_args, T_args)
+            # sim_h[(1, 1)] = f_t_Ij(H_args, T_args)
+            # sim_h[(0, 2)] = f_t_IJ(H_args, T_args)
+            # sim_h[(2, 0)] = f_t_ij(H_args, T_args)
 
             # equate t_1 residue to (1, 0) block of the similairty transformed Hamiltonian
-            t_residue = sim_h[(1, 0)].copy()
+            # t_residue = sim_h[(1, 0)].copy()
 
             # calculate net residue based on similairty transformed Hamiltnoian
-            net_R_0 = f_t_0(sim_h, Z_args, CI_flag=True, proj_flag=proj_flag, T_proj=T_proj)
-            net_R_1 = f_t_i(sim_h, Z_args, CI_flag=True, proj_flag=proj_flag, T_proj=T_proj)
-            net_R_2 = f_t_ij(sim_h, Z_args, CI_flag=True, proj_flag=proj_flag, T_proj=T_proj)
+            # net_R_0 = f_t_0(sim_h, Z_args, CI_flag=True, proj_flag=proj_flag, T_proj=T_proj)
+            # net_R_1 = f_t_i(sim_h, Z_args, CI_flag=True, proj_flag=proj_flag, T_proj=T_proj)
+            # net_R_2 = f_t_ij(sim_h, Z_args, CI_flag=True, proj_flag=proj_flag, T_proj=T_proj)
 
-            z_residue = {}
+            # z_residue = {}
 
             # calculate constant Z residue
 
             # double Z residue
-            z_residue[2] = net_R_2
-            z_residue[2] -= np.einsum('i,j->ij', t_residue, Z_args[1])
-            z_residue[2] -= np.einsum('j,i->ij', t_residue, Z_args[1])
-            if proj_flag:
-                X = np.einsum('k,k->', T_proj, t_residue)
-                z_residue[2] -= X * Z_args[2]
-                z_residue[2] -= np.einsum('k,i,kj->ij', T_proj, t_residue, Z_args[2])
-                z_residue[2] -= np.einsum('k,j,ki->ij', T_proj, t_residue, Z_args[2])
+            # z_residue[2] = net_R_2
+            # z_residue[2] -= np.einsum('i,j->ij', t_residue, Z_args[1])
+            # z_residue[2] -= np.einsum('j,i->ij', t_residue, Z_args[1])
+            # if proj_flag:
+                # X = np.einsum('k,k->', T_proj, t_residue)
+                # z_residue[2] -= X * Z_args[2]
+                # z_residue[2] -= np.einsum('k,i,kj->ij', T_proj, t_residue, Z_args[2])
+                # z_residue[2] -= np.einsum('k,j,ki->ij', T_proj, t_residue, Z_args[2])
 
 
             # single Z residue
-            z_residue[1] = net_R_1
-            z_residue[1] -= t_residue * Z_args[0]
-            if proj_flag:
-                z_residue[1] -= X * Z_args[1]
-                z_residue[1] -= np.einsum('k,i,k->i', T_proj, t_residue, Z_args[1])
-                z_residue[1] -= X * np.einsum('l,li->i', T_proj, Z_args[2])
-                z_residue[1] -= np.einsum('k,ki->i', T_proj, z_residue[2])
-                z_residue[1] -= 0.5 * np.einsum('k,l,i,kl->i', T_proj, T_proj, t_residue, Z_args[2])
+            # z_residue[1] = net_R_1
+            # z_residue[1] -= t_residue * Z_args[0]
+            # if proj_flag:
+                # z_residue[1] -= X * Z_args[1]
+                # z_residue[1] -= np.einsum('k,i,k->i', T_proj, t_residue, Z_args[1])
+                # z_residue[1] -= X * np.einsum('l,li->i', T_proj, Z_args[2])
+                # z_residue[1] -= np.einsum('k,ki->i', T_proj, z_residue[2])
+                # z_residue[1] -= 0.5 * np.einsum('k,l,i,kl->i', T_proj, T_proj, t_residue, Z_args[2])
 
             # constant Z residue
-            z_residue[0] = net_R_0
-            if proj_flag:
-                z_residue[0] -= X * Z_args[0]
-                z_residue[0] -= X * np.einsum('l,l->', T_proj, Z_args[1])
-                z_residue[0] -= np.einsum('k,k->', T_proj, z_residue[1])
-                z_residue[0] -= X * 0.5 * np.einsum('l,m,lm->', T_proj, T_proj, Z_args[2])
-                z_residue[0] -= 0.5 * np.einsum('k,l,kl->', T_proj, T_proj, z_residue[2])
+            # z_residue[0] = net_R_0
+            # if proj_flag:
+                # z_residue[0] -= X * Z_args[0]
+                # z_residue[0] -= X * np.einsum('l,l->', T_proj, Z_args[1])
+                # z_residue[0] -= np.einsum('k,k->', T_proj, z_residue[1])
+                # z_residue[0] -= X * 0.5 * np.einsum('l,m,lm->', T_proj, T_proj, Z_args[2])
+                # z_residue[0] -= 0.5 * np.einsum('k,l,kl->', T_proj, T_proj, z_residue[2])
 
-            return t_residue, z_residue
+            # return t_residue, z_residue
 
 
     def VECC_integration(self, t_final, num_steps, CI_flag=False, mix_flag=False, proj_flag=False):
@@ -479,8 +513,8 @@ class vibronic_model_hamiltonian(object):
             # initialize T amplitude as zeros
             T_amplitude = {
                        0: 0.,
-                       1: np.zeros(self.N, dtype=complex),
-                       2: np.zeros([self.N, self.N], dtype=complex)
+                       1: np.zeros(2*self.N, dtype=complex),
+                       2: np.zeros([2*self.N, 2*self.N], dtype=complex)
             }
 
             if CI_flag:
@@ -491,12 +525,17 @@ class vibronic_model_hamiltonian(object):
                     ACF[i] = T_amplitude[0]
                 else:
                     ACF[i] = np.exp(T_amplitude[0])
-            # calculate CC residue
-                residue = self.CC_residue(self.H, T_amplitude, CI_flag=CI_flag, proj_flag=proj_flag)
+                # calculate CC residue
+                args = ( self.H_tilde_reduce,
+                T_amplitude,
+                CI_flag, mix_flag,
+                proj_flag
+                )
+                sim_trans_h = self.CC_residue(*args)
                 # update T amplitude
-                T_amplitude[0] -= dtau * residue[0] * 1j
-                T_amplitude[1] -= dtau * residue[1] * 1j
-                T_amplitude[2] -= dtau * residue[2] * 1j
+                T_amplitude[0] -= dtau * (sim_trans_h[(0, 0)] - self.h_tilde_0[(0, 0)]) * 1j
+                T_amplitude[1] -= dtau * sim_trans_h[(1, 0)] * 1j
+                T_amplitude[2] -= dtau * (sim_trans_h[(2, 0)] - self.h_tilde_0[(2, 0)]) * 1j
 
                 print("time:{:} ACF:{:}".format(time[i], ACF[i]))
 
@@ -515,7 +554,12 @@ class vibronic_model_hamiltonian(object):
                 # calculate ACF
                 ACF[i] = Z_amplitude[0]
                 # calculate CC residue
-                t_residue, z_residue = self.CC_residue(self.H, T_amplitude, Z_amplitude, CI_flag=CI_flag, mix_flag=mix_flag, proj_flag=proj_flag)
+                args = ( self.H_tilde_reduce,
+                T_amplitude, Z_amplitude,
+                CI_flag, mix_flag,
+                proj_flag
+                )
+                t_residue, z_residue = self.CC_residue(*args)
                 # update T amplitude
                 T_amplitude[1] -= dtau * t_residue * 1j
                 # update Z amplitude
