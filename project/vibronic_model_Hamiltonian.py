@@ -146,7 +146,7 @@ class vibronic_model_hamiltonian(object):
         self.H_tilde = dict()
 
         # constant term???
-        self.H_tilde[(0, 0)] = self.H[(0, 0)] + sum(self.sinh_theta**2)
+        self.H_tilde[(0, 0)] = self.H[(0, 0)] + np.einsum('ii,i,i->', self.H[(1, 1)], self.sinh_theta, self.sinh_theta)
 
         # linear terns
         self.H_tilde[(1, 0)] = {
@@ -155,8 +155,8 @@ class vibronic_model_hamiltonian(object):
                                }
 
         self.H_tilde[(0, 1)] = {
-                               "a": self.sinh_theta * self.H[(0, 1)],
-                               "b": self.cosh_theta * self.H[(1, 0)]
+                               "a": self.cosh_theta * self.H[(0, 1)],
+                               "b": self.sinh_theta * self.H[(1, 0)]
                                }
 
         # quadratic terms
